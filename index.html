@@ -73,8 +73,12 @@ table.tabel-input input{padding:7px 8px;font-size:13px}
 .mode-toggle button.aktif{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(16,24,40,.15)}
 .area-preview{display:flex;justify-content:center;background:#DDE4EF;border-radius:12px;padding:22px;overflow:auto}
 
-/* ===== LEMBAR: A4 dibagi 2 = 210 x 148,5 mm (mendatar) ===== */
-.lembar{width:210mm;min-height:148.5mm;background:#fff;box-shadow:0 6px 24px rgba(16,24,40,.22);position:relative;flex-shrink:0}
+/* ===== LEMBAR ===== */
+/* Mode dot matrix: A5 landscape (A4 dibagi 2) = 210 x 148,5 mm */
+.lembar{background:#fff;box-shadow:0 6px 24px rgba(16,24,40,.22);position:relative;flex-shrink:0}
+.lembar.dot{width:210mm;min-height:148.5mm}
+/* Mode printer/PDF: A4 portrait = 210 x 297 mm (muat lebih banyak item) */
+.lembar.pdf{width:210mm;min-height:297mm}
 
 /* --- Mode PDF --- */
 .lembar.pdf{padding:7mm 9mm;font-size:10pt;color:#111;display:flex;flex-direction:column}
@@ -92,15 +96,15 @@ table.tabel-input input{padding:7px 8px;font-size:13px}
 .pdf .meta{font-size:9pt;line-height:1.4}
 .pdf .meta td{padding:0 2px;text-align:left;vertical-align:top}
 .pdf table.brg{width:100%;border-collapse:collapse;font-size:9pt;margin-top:1.5mm}
-.pdf table.brg th{background:#EDF3FB;border:1.4px solid #333;padding:2px 5px;font-size:8pt;letter-spacing:.05em;color:var(--navy)}
-.pdf table.brg td{border:1px solid #333;padding:2px 5px}
+.pdf table.brg th{background:#EDF3FB;border:1.4px solid #333;padding:2.5px 5px;font-size:8pt;letter-spacing:.05em;color:var(--navy)}
+.pdf table.brg td{border:1px solid #333;padding:2.5px 5px}
 .pdf table.brg td.r{text-align:right;font-variant-numeric:tabular-nums}
 .pdf table.brg td.c{text-align:center}
 .pdf .baris-total td{font-weight:800;background:#F5F8FD;font-size:10pt}
-.pdf .bawah{display:flex;gap:6mm;margin-top:auto;padding-top:3mm;align-items:stretch}
+.pdf .bawah{display:flex;gap:6mm;margin-top:auto;padding-top:2mm;align-items:stretch}
 .pdf .bawah .kiri{flex:1;display:flex;flex-direction:column}
 .pdf .terbilang{font-size:8.5pt;font-style:italic;color:#333}
-.pdf .kotak-bank{border:1.5px dashed var(--biru);border-radius:6px;padding:4px 8px;font-size:9pt;margin-top:2mm;line-height:1.55}
+.pdf .kotak-bank{border:1.5px dashed var(--biru);border-radius:6px;padding:3px 8px;font-size:8.5pt;margin-top:1.5mm;line-height:1.4}
 .pdf .kotak-bank b{color:var(--navy);font-size:7.5pt;letter-spacing:.08em}
 .pdf .isi-nanti{color:#888;letter-spacing:.12em}
 .pdf .catatan{font-size:8.5pt;color:#444;margin-top:1.5mm;white-space:pre-wrap}
@@ -133,22 +137,26 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 .kosong{text-align:center;color:var(--abu);padding:24px 0;font-size:13px}
 
 /* ===== CETAK ===== */
-@page{size:210mm 148.5mm;margin:0}
+/* Ukuran halaman @page diatur lewat JavaScript sebelum print
+   (A4 portrait untuk PDF, A5 landscape untuk dot matrix) */
+@page{size:210mm 297mm;margin:0}
 @media print{
-  html,body{height:auto;background:#fff}
+  html,body{height:auto;background:#fff;margin:0}
   .topbar,.wrap>.kolom-form,.preview-kepala,dialog{display:none !important}
   .wrap{display:block;padding:0;max-width:none}
   .panel{border:none;padding:0;border-radius:0}
   .area-preview{background:#fff;padding:0;border-radius:0;overflow:visible;display:block}
-  .lembar{box-shadow:none;width:auto;max-width:210mm;min-height:auto;margin:0}
+  .lembar{box-shadow:none;margin:0}
   .lembar,.lembar *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
-  .lembar.pdf{padding:4mm 7mm}
-  .lembar.dot{background:#fff;padding:3mm 6mm}
+  /* PDF = A4 portrait */
+  .lembar.pdf{width:auto;max-width:210mm;min-height:auto;padding:8mm 9mm}
+  /* dot matrix = A5 landscape */
+  .lembar.dot{width:auto;max-width:210mm;min-height:auto;background:#fff;padding:3mm 6mm}
   .lembar.dot::before,.lembar.dot::after{display:none}
   .pdf table.brg tr{page-break-inside:avoid}
   .pdf table.brg thead{display:table-header-group}
   .pdf .bawah,.pdf .kotak-bank,.pdf .ttd{page-break-inside:avoid}
-  .pdf .bawah{margin-top:3mm}
+  .pdf .bawah{margin-top:5mm}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none !important}}
 </style>
@@ -214,14 +222,36 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 
     <div class="panel" style="margin-bottom:14px">
       <h2>Rekening Pembayaran</h2>
+      <div class="baris" id="barisPilihRek" style="display:none">
+        <div>
+          <label for="pilihRek">Pilih rekening tersimpan</label>
+          <select id="pilihRek">
+            <option value="">— pilih / isi baru di bawah —</option>
+          </select>
+        </div>
+      </div>
       <div class="baris">
-        <div style="max-width:110px"><label for="bank">Bank</label><input id="bank" type="text" placeholder="BNI"></div>
-        <div><label for="an">Atas Nama (a/n)</label><input id="an" type="text" placeholder="—"></div>
+        <div style="max-width:110px"><label for="bank">Bank</label><input id="bank" type="text" list="dlBank" placeholder="BNI"></div>
+        <div><label for="an">Atas Nama (a/n)</label><input id="an" type="text" list="dlAn" placeholder="—"></div>
       </div>
       <div class="baris">
         <div><label for="rek">No. Rekening</label><input id="rek" type="text" placeholder="kosongkan bila belum ada"></div>
       </div>
-      <div class="kecil">Bila dikosongkan, invoice mencetak garis titik-titik untuk diisi tulis tangan. Data rekening tersimpan otomatis untuk invoice berikutnya.</div>
+      <datalist id="dlBank"></datalist>
+      <datalist id="dlAn"></datalist>
+      <div class="kecil">Bila dikosongkan, invoice mencetak garis titik-titik untuk diisi tulis tangan. Setiap rekening yang dipakai otomatis tersimpan sebagai pilihan untuk invoice berikutnya.</div>
+    </div>
+
+    <div class="panel" style="margin-bottom:14px">
+      <h2>Penanda Tangan</h2>
+      <div class="baris">
+        <div>
+          <label for="ttdNama">Nama (Hormat kami)</label>
+          <input id="ttdNama" type="text" list="dlTtd" placeholder="kosongkan bila tanda tangan manual">
+          <datalist id="dlTtd"></datalist>
+        </div>
+      </div>
+      <div class="kecil">Bila diisi, nama tercetak di bawah "Hormat kami". Bila kosong, hanya garis tanda tangan. Nama yang dipakai tersimpan sebagai pilihan berikutnya.</div>
     </div>
 
     <div class="panel">
@@ -235,9 +265,10 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
         <button class="btn btn-abu" id="btnTxt">⬇ File .txt</button>
       </div>
       <div class="status" id="status"></div>
-      <div class="kecil" style="background:#FFF7E6;border:1px solid #F0D9A0;border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.55">
+      <div class="kecil" style="background:#FFF7E6;border:1px solid #F0D9A0;border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.6">
         <b>Pengaturan di dialog cetak (penting):</b><br>
-        • Ukuran kertas: <b>A5</b> (atau custom 21 × 14,8 cm) · Orientasi: <b>Landscape / Mendatar</b><br>
+        • <b>Cetak / PDF</b> → Ukuran kertas <b>A4</b>, Orientasi <b>Portrait / Tegak</b> (muat lebih banyak item)<br>
+        • <b>Cetak Dot Matrix</b> → Ukuran <b>A5</b> (atau custom 21 × 14,8 cm), Orientasi <b>Landscape / Mendatar</b><br>
         • Margins: <b>None / Tanpa margin</b> · Scale: <b>100</b> (jangan "Fit to page")<br>
         • Buka <b>More settings</b> lalu centang <b>Background graphics</b> agar garis &amp; warna tabel ikut tercetak.
       </div>
@@ -247,11 +278,11 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <!-- ============ PREVIEW ============ -->
   <div class="panel">
     <div class="preview-kepala">
-      <h2 style="margin:0">Pratinjau (A4 dibagi 2, mendatar)</h2>
+      <h2 style="margin:0" id="judulPratinjau">Pratinjau — A4 Portrait</h2>
       <div class="spacer" style="flex:1"></div>
       <div class="mode-toggle" role="tablist">
-        <button id="tabPdf" class="aktif" role="tab" aria-selected="true">Printer Biasa / PDF</button>
-        <button id="tabDot" role="tab" aria-selected="false">Dot Matrix</button>
+        <button id="tabPdf" class="aktif" role="tab" aria-selected="true">Printer / PDF (A4)</button>
+        <button id="tabDot" role="tab" aria-selected="false">Dot Matrix (A5)</button>
       </div>
     </div>
     <div class="area-preview">
@@ -295,7 +326,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
           </div>
           <div class="ttd">
             <div>Tanda Terima,<div class="ruang"></div><div class="garis-ttd">(.......................)</div></div>
-            <div>Hormat kami,<div class="ruang"></div><div class="garis-ttd">(.......................)</div></div>
+            <div>Hormat kami,<div class="ruang"></div><div class="garis-ttd" id="pTtdNama">(.......................)</div></div>
           </div>
         </div>
       </div>
@@ -402,9 +433,9 @@ const simpanan = (typeof window.storage !== 'undefined' && window.storage) ? win
 };
 const ALAMAT_DEFAULT = '';
 const LEBAR = 78;          // kolom teks dot matrix (10 CPI, kertas 210 mm)
-const MIN_BARIS_PDF = 10;  // baris kosong minimum pada tabel cetak
+const MIN_BARIS_PDF = 22;  // baris kosong minimum (A4 portrait muat lebih banyak)
 
-let db = { counter:{}, bank:{bank:'',an:'',rek:''}, alamat:ALAMAT_DEFAULT, telp:'', sb:{url:'',key:''}, invoices:[] };
+let db = { counter:{}, bank:{bank:'',an:'',rek:''}, rekeningList:[], penandatanganList:[], ttdNama:'', alamat:ALAMAT_DEFAULT, telp:'', sb:{url:'',key:''}, invoices:[] };
 let items = [];
 let idAktif = null;
 let mode = 'pdf';
@@ -457,6 +488,34 @@ async function muatDB(){
   if(!db.sb) db.sb = {url:'',key:''};
   if(!db.sb.url) db.sb.url = SB_URL_BAWAAN;
   if(!db.sb.key) db.sb.key = SB_KEY_BAWAAN;
+  // pastikan daftar tersedia
+  if(!Array.isArray(db.rekeningList)) db.rekeningList = [];
+  if(!Array.isArray(db.penandatanganList)) db.penandatanganList = [];
+  // migrasi: bila ada rekening tunggal lama, masukkan ke daftar
+  if(db.bank && (db.bank.rek||db.bank.an||db.bank.bank)) tambahRekening(db.bank, true);
+}
+/* --- kelola daftar rekening & penanda tangan --- */
+function kunciRek(r){ return `${(r.bank||'').trim()}|${(r.an||'').trim()}|${(r.rek||'').trim()}`.toLowerCase(); }
+function tambahRekening(r, diam){
+  if(!r || !(r.bank||r.an||r.rek)) return;
+  const k = kunciRek(r);
+  if(k==='||') return;
+  if(!db.rekeningList.some(x=>kunciRek(x)===k)){
+    db.rekeningList.unshift({bank:(r.bank||'').trim(), an:(r.an||'').trim(), rek:(r.rek||'').trim()});
+    if(!diam) simpanDB();
+  }
+}
+function tambahPenandatangan(nama, diam){
+  nama = (nama||'').trim();
+  if(!nama) return;
+  if(!db.penandatanganList.some(x=>x.toLowerCase()===nama.toLowerCase())){
+    db.penandatanganList.unshift(nama);
+    if(!diam) simpanDB();
+  }
+}
+function labelRek(r){
+  const p=[]; if(r.bank)p.push(r.bank); if(r.an)p.push('a/n '+r.an); if(r.rek)p.push(r.rek);
+  return p.join(' · ');
 }
 async function simpanDB(){
   try{
@@ -589,6 +648,8 @@ function renderPdf(tot){
     &nbsp;a/n ${a?esc(a):'<span class="isi-nanti">..........................</span>'}
     &nbsp;No. Rek: ${r?('<b style="font-size:10pt;letter-spacing:.06em">'+esc(r)+'</b>'):'<span class="isi-nanti">................................</span>'}`;
   $('pCatatan').textContent = $('catatan').value.trim() ? 'Catatan: '+$('catatan').value.trim() : '';
+  const nmTtd = $('ttdNama').value.trim();
+  $('pTtdNama').textContent = nmTtd ? '( '+nmTtd+' )' : '(.......................)';
 }
 
 /* --- teks dot matrix, lebar tetap 78 kolom --- */
@@ -641,7 +702,9 @@ function teksDot(tot, denganKop){
   L.push('');
   L.push(pad('Tanda Terima,',39)+padL('Hormat kami,',39));
   L.push(''); L.push(''); L.push(''); L.push('');
-  L.push(pad('(....................)',39)+padL('(....................)',39));
+  const nmTtd = $('ttdNama').value.trim();
+  const ttdKanan = nmTtd ? '( '+nmTtd+' )' : '(....................)';
+  L.push(pad('(....................)',39)+padL(ttdKanan,39));
   return L.join('\n');
 }
 function renderDot(tot){ $('dotPre').textContent = teksDot(tot, false); } /* kop di layar/print pakai logo gambar */
@@ -655,12 +718,22 @@ function setMode(m){
   $('tabDot').classList.toggle('aktif', m==='dot');
   $('tabPdf').setAttribute('aria-selected', m==='pdf');
   $('tabDot').setAttribute('aria-selected', m==='dot');
+  const jp = $('judulPratinjau');
+  if(jp) jp.textContent = m==='dot' ? 'Pratinjau — A5 Landscape (Dot Matrix)' : 'Pratinjau — A4 Portrait';
 }
 $('tabPdf').addEventListener('click', ()=>setMode('pdf'));
 $('tabDot').addEventListener('click', ()=>setMode('dot'));
 
+let styleCetak = null;
+function aturUkuranHalaman(m){
+  if(!styleCetak){ styleCetak = document.createElement('style'); document.head.appendChild(styleCetak); }
+  const ukuran = m==='dot' ? '210mm 148.5mm' : '210mm 297mm';   // dot: A5 landscape, pdf: A4 portrait
+  styleCetak.textContent = `@page{size:${ukuran};margin:0}`;
+}
+
 async function cetak(m){
   setMode(m);
+  aturUkuranHalaman(m);
   await simpanInvoice(true);
   window.print();
 }
@@ -692,6 +765,7 @@ function ambilForm(){
     items: barisValid().map(it=>({qty:it.qty, unit:it.unit, name:it.name, price:+it.price||0})),
     total: totalSemua(),
     bank: {bank:$('bank').value.trim(), an:$('an').value.trim(), rek:$('rek').value.trim()},
+    ttdNama: $('ttdNama').value.trim(),
     catatan: $('catatan').value.trim(),
     diubah: new Date().toISOString()
   };
@@ -712,6 +786,8 @@ async function simpanInvoice(diam){
   idAktif = inv.id;
   catatNomor(inv.no, inv.tanggal);
   db.bank = inv.bank;
+  tambahRekening(inv.bank, true);          // simpan rekening ke daftar pilihan
+  tambahPenandatangan(inv.ttdNama, true);  // simpan penanda tangan ke daftar pilihan
   await simpanDB();
   isiDatalistPelanggan();
   sbDorongInvoice(inv);       // sinkron online (bila terhubung)
@@ -764,7 +840,9 @@ function isiForm(inv, nomorBaru){
   $('bank').value = inv.bank?.bank||'';
   $('an').value = inv.bank?.an||'';
   $('rek').value = inv.bank?.rek||'';
+  $('ttdNama').value = inv.ttdNama||'';
   $('catatan').value = inv.catatan||'';
+  $('pilihRek').value = '';
   items = inv.items.map(x=>({qty:String(x.qty),unit:x.unit,name:x.name,price:x.price}));
   if(items.length===0) items.push({qty:'',unit:'',name:'',price:''});
   renderBarang();
@@ -775,10 +853,14 @@ function formBaru(){
   $('tgl').value = hariIni();
   $('noInv').value = nomorBerikut($('tgl').value);
   $('pelanggan').value = '';
-  $('bank').value = db.bank.bank||'';
-  $('an').value = db.bank.an||'';
-  $('rek').value = db.bank.rek||'';
+  // rekening & penanda tangan terakhir dipakai sebagai default (bisa diganti/dipilih/dikosongkan)
+  const rt = db.rekeningList[0] || db.bank || {};
+  $('bank').value = rt.bank||'';
+  $('an').value = rt.an||'';
+  $('rek').value = rt.rek||'';
+  $('ttdNama').value = db.penandatanganList[0] || '';
   $('catatan').value = '';
+  $('pilihRek').value = '';
   items = [{qty:'',unit:'',name:'',price:''}];
   renderBarang();
 }
@@ -788,11 +870,41 @@ $('tgl').addEventListener('change', ()=>{
   if(!idAktif && /^INV\/KMS\//.test($('noInv').value)) $('noInv').value = nomorBerikut($('tgl').value);
   perbarui();
 });
-['noInv','pelanggan','bank','an','rek','catatan'].forEach(id=> $(id).addEventListener('input', perbarui));
+['noInv','pelanggan','bank','an','rek','catatan','ttdNama'].forEach(id=> $(id).addEventListener('input', perbarui));
+
+// pilih rekening tersimpan -> isi otomatis bank/an/rek
+$('pilihRek').addEventListener('change', ()=>{
+  const i = $('pilihRek').value;
+  if(i==='') return;
+  const r = db.rekeningList[+i];
+  if(r){ $('bank').value=r.bank||''; $('an').value=r.an||''; $('rek').value=r.rek||''; perbarui(); }
+});
+// bila bank/an/rek diketik manual, reset dropdown ke "isi baru"
+['bank','an','rek'].forEach(id=> $(id).addEventListener('input', ()=>{ $('pilihRek').value=''; }));
 
 function isiDatalistPelanggan(){
   const set = [...new Set(db.invoices.map(x=>x.pelanggan).filter(Boolean))];
   $('daftarPelanggan').innerHTML = set.map(p=>`<option value="${esc(p)}">`).join('');
+  isiPilihanRekening();
+  isiPilihanPenandatangan();
+}
+function isiPilihanRekening(){
+  const sel = $('pilihRek'); if(!sel) return;
+  const nilaiSekarang = sel.value;
+  const opsi = ['<option value="">— pilih / isi baru di bawah —</option>']
+    .concat(db.rekeningList.map((r,i)=>`<option value="${i}">${esc(labelRek(r))}</option>`));
+  sel.innerHTML = opsi.join('');
+  sel.value = nilaiSekarang;
+  $('barisPilihRek').style.display = db.rekeningList.length ? '' : 'none';
+  // datalist bank & a/n untuk ketik-cepat
+  const banks=[...new Set(db.rekeningList.map(r=>r.bank).filter(Boolean))];
+  const ans=[...new Set(db.rekeningList.map(r=>r.an).filter(Boolean))];
+  $('dlBank').innerHTML = banks.map(x=>`<option value="${esc(x)}">`).join('');
+  $('dlAn').innerHTML = ans.map(x=>`<option value="${esc(x)}">`).join('');
+}
+function isiPilihanPenandatangan(){
+  const dl=$('dlTtd'); if(!dl) return;
+  dl.innerHTML = db.penandatanganList.map(n=>`<option value="${esc(n)}">`).join('');
 }
 
 /* ================== PENGATURAN ================== */
@@ -840,6 +952,8 @@ $('fileImpor').addEventListener('change', e=>{
       });
       db.invoices = [...peta.values()].sort((a,b)=>(b.diubah||'').localeCompare(a.diubah||''));
       if(d.bank) db.bank = d.bank;
+      if(Array.isArray(d.rekeningList)) d.rekeningList.forEach(r=>tambahRekening(r, true));
+      if(Array.isArray(d.penandatanganList)) d.penandatanganList.forEach(n=>tambahPenandatangan(n, true));
       if(d.alamat!==undefined) db.alamat = d.alamat;
       if(d.telp!==undefined) db.telp = d.telp;
       if(d.counter) Object.keys(d.counter).forEach(k=>{ db.counter[k]=Math.max(db.counter[k]||0, d.counter[k]); });
@@ -936,6 +1050,8 @@ async function sbTarik(){
   if(ps.data && ps.data.data){
     const d = ps.data.data;
     if(d.bank && (d.bank.rek||d.bank.an||d.bank.bank)) db.bank = d.bank;
+    if(Array.isArray(d.rekeningList)) d.rekeningList.forEach(r=>tambahRekening(r, true));
+    if(Array.isArray(d.penandatanganList)) d.penandatanganList.forEach(n=>tambahPenandatangan(n, true));
     if(d.alamat) db.alamat = d.alamat;
     if(d.telp) db.telp = d.telp;
     if(d.counter) Object.keys(d.counter).forEach(k=>{ db.counter[k]=Math.max(db.counter[k]||0, d.counter[k]); });
@@ -966,7 +1082,7 @@ async function sbHapusInvoice(id){
 async function sbDorongPengaturan(){
   if(!sb) return;
   try{
-    await sb.from('pengaturan').upsert({id:1, data:{bank:db.bank, alamat:db.alamat, telp:db.telp, counter:db.counter}});
+    await sb.from('pengaturan').upsert({id:1, data:{bank:db.bank, rekeningList:db.rekeningList, penandatanganList:db.penandatanganList, alamat:db.alamat, telp:db.telp, counter:db.counter}});
   }catch(e){}
 }
 function sbLangganan(){
