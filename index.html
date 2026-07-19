@@ -382,8 +382,24 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 
 <script>
 'use strict';
+/* ================== KONFIGURASI SUPABASE ================== */
+/* Kredensial bawaan — aplikasi langsung online tanpa perlu Hubungkan manual.
+   Untuk mengganti: cukup ubah dua baris di bawah ini. */
+const SB_URL_BAWAAN = 'https://qkhnkugtkhteyupjaopq.supabase.co';
+const SB_KEY_BAWAAN = 'sb_publishable_eYL-ZRS87P_FL7o8JgwV5A_Dk3OIzbE';
+
 /* ================== KONSTANTA ================== */
 const KUNCI = 'kms_invoice_v1';
+
+/* Penyimpanan lokal: pakai window.storage bila tersedia (di dalam Claude),
+   selain itu pakai localStorage browser supaya data tetap awet saat file
+   dibuka langsung / di-host di GitHub Pages. */
+const simpanan = (typeof window.storage !== 'undefined' && window.storage) ? window.storage : {
+  get: async k => { const v = localStorage.getItem(k); if(v===null) throw new Error('kosong'); return {key:k, value:v}; },
+  set: async (k,v) => { localStorage.setItem(k,v); return {key:k, value:v}; },
+  delete: async k => { localStorage.removeItem(k); return {key:k, deleted:true}; },
+  list: async (p='') => ({keys:Object.keys(localStorage).filter(k=>k.startsWith(p))})
+};
 const ALAMAT_DEFAULT = '';
 const LEBAR = 78;          // kolom teks dot matrix (10 CPI, kertas 210 mm)
 const MIN_BARIS_PDF = 10;  // baris kosong minimum pada tabel cetak
@@ -434,13 +450,17 @@ function terbilang(n){
 /* ================== PENYIMPANAN ================== */
 async function muatDB(){
   try{
-    const r = await window.storage.get(KUNCI);
+    const r = await simpanan.get(KUNCI);
     if(r && r.value){ db = Object.assign(db, JSON.parse(r.value)); }
   }catch(e){ /* kunci belum ada — pakai default */ }
+  // kredensial bawaan dipakai bila belum pernah diatur sendiri
+  if(!db.sb) db.sb = {url:'',key:''};
+  if(!db.sb.url) db.sb.url = SB_URL_BAWAAN;
+  if(!db.sb.key) db.sb.key = SB_KEY_BAWAAN;
 }
 async function simpanDB(){
   try{
-    await window.storage.set(KUNCI, JSON.stringify(db));
+    await simpanan.set(KUNCI, JSON.stringify(db));
     storageOk = true;
   }catch(e){
     storageOk = false;
@@ -970,6 +990,7 @@ function sbLangganan(){
 }
 $('btnSbHubung').addEventListener('click', async ()=>{
   db.sb = {url:$('sbUrl').value.trim(), key:$('sbKey').value.trim()};
+  db.sbMati = false;
   await simpanDB();
   sbHubungkan(false);
 });
@@ -982,9 +1003,8 @@ $('btnSbSync').addEventListener('click', async ()=>{
 $('btnSbPutus').addEventListener('click', async ()=>{
   try{ if(sbKanal&&sb) sb.removeChannel(sbKanal); }catch(e){}
   sb=null; sbKanal=null;
-  db.sb={url:'',key:''};
+  db.sbMati = true;              // ditandai sengaja offline, agar tidak tersambung ulang saat dibuka lagi
   await simpanDB();
-  $('sbUrl').value=''; $('sbKey').value='';
   setSbStatus('Offline — data lokal', false);
 });
 
@@ -993,7 +1013,7 @@ $('btnSbPutus').addEventListener('click', async ()=>{
   await muatDB();
   isiDatalistPelanggan();
   formBaru();
-  if(db.sb && db.sb.url && db.sb.key) sbHubungkan(true);  // sambung otomatis
+  if(db.sb && db.sb.url && db.sb.key && !db.sbMati) sbHubungkan(true);  // sambung otomatis
 })();
 </script>
 </body>
