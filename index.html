@@ -613,17 +613,37 @@ function kunciBulan(iso){
   if(!iso || !/^\d{4}-\d{2}/.test(iso)) iso = hariIni();  // jaga-jaga tanggal kosong/rusak
   const [y,m]=iso.split('-'); return `${y}-${m}`;
 }
+// ambil angka urut dari sebuah nomor invoice (misal INV/KMS/2026/07/004 -> 4)
+function angkaUrut(no){
+  const m = String(no||'').match(/(\d{1,5})\s*$/);
+  return m ? parseInt(m[1],10) : 0;
+}
+// nomor tertinggi yang SUDAH DIPAKAI pada bulan tsb, dihitung dari:
+//  (1) counter tersimpan, dan (2) scan seluruh invoice yang ada (paling akurat & anti-duplikat)
+function nomorTertinggi(kb){
+  let maks = db.counter[kb] || 0;
+  const [y,m] = kb.split('-');
+  const prefix = `INV/KMS/${y}/${m}/`;
+  db.invoices.forEach(inv=>{
+    // cocokkan berdasarkan format nomor (bukan tanggal invoice) agar tahan walau tanggal diubah
+    if(typeof inv.no==='string' && inv.no.startsWith(prefix)){
+      const n = angkaUrut(inv.no);
+      if(n>maks) maks=n;
+    }
+  });
+  return maks;
+}
 function nomorBerikut(iso){
   const kb = kunciBulan(iso);
-  const n = (db.counter[kb]||0)+1;
+  const n = nomorTertinggi(kb) + 1;
   const [y,m] = kb.split('-');
   return `INV/KMS/${y}/${m}/${String(n).padStart(3,'0')}`;
 }
 function catatNomor(no, iso){
-  const m = no.match(/(\d{1,4})\s*$/);
-  if(!m) return;
-  const kb = kunciBulan(iso);
-  const n = parseInt(m[1],10);
+  if(!/^INV\/KMS\//.test(no||'')) return;   // hanya untuk format standar
+  const m = String(no).match(/INV\/KMS\/(\d{4})\/(\d{2})\//);
+  const kb = m ? `${m[1]}-${m[2]}` : kunciBulan(iso);
+  const n = angkaUrut(no);
   if(n > (db.counter[kb]||0)) db.counter[kb] = n;
 }
 
@@ -885,10 +905,21 @@ async function simpanInvoice(diam){
   }
   // cegah nomor kembar dengan invoice lain
   const kembar = db.invoices.find(x=>x.no===inv.no && x.id!==inv.id);
-  if(kembar && !diam){
-    const lanjut = confirm('Nomor '+inv.no+' sudah dipakai invoice lain ('+
-      (kembar.pelanggan||'-')+', '+tglIndo(kembar.tanggal)+').\nTetap simpan dengan nomor yang sama?');
-    if(!lanjut){ info('Batal — silakan ganti nomor invoice.','var(--merah)'); return; }
+  if(kembar){
+    const invBaru = !db.invoices.some(x=>x.id===inv.id);
+    const nomorAuto = /^INV\/KMS\//.test(inv.no);
+    if(invBaru && nomorAuto){
+      // invoice baru dgn nomor otomatis yang ternyata bentrok (mis. data dari perangkat lain
+      // masuk setelah form dibuka) -> naikkan otomatis ke nomor berikutnya yang bebas
+      const noBaru = nomorBerikut(inv.tanggal);
+      inv.no = noBaru;
+      if($('noInv')) $('noInv').value = noBaru;
+      if(!diam) info('Nomor bentrok terdeteksi — otomatis diganti ke '+noBaru,'var(--navy)');
+    }else if(!diam){
+      const lanjut = confirm('Nomor '+inv.no+' sudah dipakai invoice lain ('+
+        (kembar.pelanggan||'-')+', '+tglIndo(kembar.tanggal)+').\nTetap simpan dengan nomor yang sama?');
+      if(!lanjut){ info('Batal — silakan ganti nomor invoice.','var(--merah)'); return; }
+    }
   }
   const idx = db.invoices.findIndex(x=>x.id===inv.id);
   if(idx>=0) db.invoices[idx]=inv; else db.invoices.unshift(inv);
@@ -1333,6 +1364,12 @@ function sbLangganan(){
       }
       await simpanDB(); isiDatalistPelanggan();
       if($('dlgRiwayat').open) renderRiwayat();
+      // bila form saat ini invoice BARU dengan nomor otomatis, segarkan nomornya
+      // supaya tidak bentrok dengan data yang baru masuk dari perangkat lain
+      if(!idAktif && /^INV\/KMS\//.test($('noInv').value)){
+        const noSegar = nomorBerikut($('tgl').value);
+        if(noSegar !== $('noInv').value){ $('noInv').value = noSegar; perbarui(); }
+      }
       info('Data tersinkron dari perangkat lain ✓');
     })
     .subscribe();
@@ -1362,7 +1399,7 @@ $('btnSbPutus').addEventListener('click', async ()=>{
   await muatDB();
   isiDatalistPelanggan();
   formBaru();
-  if(db.sb && db.sb.url && db.sb.key && !db.sbMati) sbHubungkan(true);  // sambung otomatis
+  if(db.sb && db.sb.url && db.sb.key && !db.sbMati && !window.SB_MATIKAN) sbHubungkan(true);  // sambung otomatis
 })();
 </script>
 </body>
