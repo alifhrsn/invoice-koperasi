@@ -101,7 +101,7 @@ table.tabel-input input{padding:7px 8px;font-size:13px}
 .pdf table.brg td.r{text-align:right;font-variant-numeric:tabular-nums}
 .pdf table.brg td.c{text-align:center}
 .pdf .baris-total td{font-weight:800;background:#F5F8FD;font-size:10pt}
-.pdf .bawah{display:flex;gap:6mm;margin-top:auto;padding-top:2mm;align-items:stretch}
+.pdf .bawah{display:flex;gap:6mm;margin-top:6mm;padding-top:2mm;align-items:stretch}
 .pdf .bawah .kiri{flex:1;display:flex;flex-direction:column}
 .pdf .terbilang{font-size:8.5pt;font-style:italic;color:#333}
 .pdf .kotak-bank{border:1.5px dashed var(--biru);border-radius:6px;padding:3px 8px;font-size:8.5pt;margin-top:1.5mm;line-height:1.4}
@@ -173,6 +173,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <span id="sbStatus" style="font-size:11.5px;background:rgba(255,255,255,.14);padding:6px 12px;border-radius:99px"><span style="color:#9AA6B8">●</span> Offline — data lokal</span>
   <button class="btn btn-putih" id="btnBaru">+ Invoice Baru</button>
   <button class="btn btn-biru" id="btnRiwayat">Riwayat</button>
+  <button class="btn btn-biru" id="btnRekap">📊 Rekap Dapur</button>
   <button class="btn btn-biru" id="btnPengaturan" title="Pengaturan">⚙ Pengaturan</button>
 </header>
 
@@ -216,6 +217,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
         <option value="pck"><option value="rncg"><option value="tbg"><option value="ppn">
         <option value="box"><option value="ltr"><option value="ikat"><option value="btl">
       </datalist>
+      <datalist id="dlBarang"></datalist>
       <div class="total-form"><span style="font-weight:700">TOTAL</span><b id="totalForm">Rp 0</b></div>
       <div class="kecil">Tekan Enter di kolom harga untuk langsung menambah baris baru. Jika item sangat banyak, cetakan otomatis bersambung ke lembar berikutnya.</div>
     </div>
@@ -348,6 +350,27 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <div class="dlg-isi" id="isiRiwayat"></div>
 </dialog>
 
+<!-- ============ REKAP PER DAPUR ============ -->
+<dialog id="dlgRekap">
+  <div class="dlg-kepala">
+    <b>Rekap per Dapur</b>
+    <button class="btn btn-putih" id="btnTutupRekap">Tutup</button>
+  </div>
+  <div class="dlg-isi">
+    <div class="baris" style="margin-bottom:10px">
+      <div>
+        <label for="pilihDapur">Pilih Dapur (Tuan/Toko)</label>
+        <select id="pilihDapur"></select>
+      </div>
+    </div>
+    <div class="aksi" style="margin:0 0 10px">
+      <button class="btn btn-abu" id="btnRekapCetak">🖨 Cetak Rekap</button>
+      <button class="btn btn-abu" id="btnRekapCsv">⬇ Ekspor CSV</button>
+    </div>
+    <div id="isiRekap"></div>
+  </div>
+</dialog>
+
 <!-- ============ PENGATURAN ============ -->
 <dialog id="dlgPengaturan">
   <div class="dlg-kepala">
@@ -435,7 +458,9 @@ const ALAMAT_DEFAULT = '';
 const LEBAR = 78;          // kolom teks dot matrix (10 CPI, kertas 210 mm)
 const MIN_BARIS_PDF = 22;  // baris kosong minimum (A4 portrait muat lebih banyak)
 
-let db = { counter:{}, bank:{bank:'',an:'',rek:''}, rekeningList:[], penandatanganList:[], ttdNama:'', alamat:ALAMAT_DEFAULT, telp:'', sb:{url:'',key:''}, invoices:[] };
+let db = { counter:{}, bank:{bank:'',an:'',rek:''}, rekeningList:[], penandatanganList:[], ttdNama:'', barangList:[], hargaPerDapur:{}, alamat:ALAMAT_DEFAULT, telp:'', sb:{url:'',key:''}, invoices:[] };
+// barangList: [nama, ...] daftar nama barang yang pernah dipakai (untuk suggest)
+// hargaPerDapur: { "namadapur": { "namabarang": hargaTerakhir } }  + kunci "_umum" untuk lintas dapur
 let items = [];
 let idAktif = null;
 let mode = 'pdf';
@@ -491,8 +516,64 @@ async function muatDB(){
   // pastikan daftar tersedia
   if(!Array.isArray(db.rekeningList)) db.rekeningList = [];
   if(!Array.isArray(db.penandatanganList)) db.penandatanganList = [];
+  if(!db.penandatanganList.some(x=>x.toLowerCase()==='admin')) db.penandatanganList.push('Admin');
+  if(!Array.isArray(db.barangList)) db.barangList = [];
+  if(!db.hargaPerDapur || typeof db.hargaPerDapur!=='object') db.hargaPerDapur = {};
   // migrasi: bila ada rekening tunggal lama, masukkan ke daftar
   if(db.bank && (db.bank.rek||db.bank.an||db.bank.bank)) tambahRekening(db.bank, true);
+  // migrasi: bangun daftar barang & harga dari invoice yang sudah ada (tanpa menghapus apa pun)
+  bangunDaftarDariInvoice();
+}
+/* Bangun barangList & hargaPerDapur dari seluruh invoice tersimpan.
+   Aman dipanggil berulang: hanya menambah, tidak menghapus. Harga memakai
+   invoice terbaru sebagai yang berlaku (diurut naik lalu ditimpa). */
+function bangunDaftarDariInvoice(){
+  const urut = [...db.invoices].sort((a,b)=>(a.diubah||'').localeCompare(b.diubah||''));
+  urut.forEach(inv=>{
+    const dapur = (inv.pelanggan||'').trim();
+    (inv.items||[]).forEach(it=>{
+      const nama=(it.name||'').trim(); if(!nama) return;
+      tambahBarang(nama, true);
+      const harga=+it.price||0;
+      if(harga>0){
+        catatHarga(dapur, nama, harga, true);
+        catatHarga('_umum', nama, harga, true);
+      }
+    });
+  });
+}
+function tambahBarang(nama, diam){
+  nama=(nama||'').trim(); if(!nama) return;
+  if(!db.barangList.some(x=>x.toLowerCase()===nama.toLowerCase())){
+    db.barangList.push(nama);
+    db.barangList.sort((a,b)=>a.localeCompare(b,'id'));
+    if(!diam) simpanDB();
+  }
+}
+function catatHarga(dapur, nama, harga, diam){
+  dapur=(dapur||'_umum').trim()||'_umum'; nama=(nama||'').trim();
+  if(!nama || !(harga>0)) return;
+  if(!db.hargaPerDapur[dapur]) db.hargaPerDapur[dapur]={};
+  db.hargaPerDapur[dapur][nama.toLowerCase()] = {nama, harga};
+  if(!diam) simpanDB();
+}
+function hargaTerakhir(dapur, nama){
+  nama=(nama||'').trim().toLowerCase(); if(!nama) return null;
+  const d=(dapur||'').trim();
+  if(d && db.hargaPerDapur[d] && db.hargaPerDapur[d][nama]) return db.hargaPerDapur[d][nama].harga;
+  if(db.hargaPerDapur['_umum'] && db.hargaPerDapur['_umum'][nama]) return db.hargaPerDapur['_umum'][nama].harga;
+  return null;
+}
+function gabungHarga(sumber){
+  if(!sumber || typeof sumber!=='object') return;
+  Object.keys(sumber).forEach(dapur=>{
+    const tabel=sumber[dapur]; if(!tabel||typeof tabel!=='object') return;
+    if(!db.hargaPerDapur[dapur]) db.hargaPerDapur[dapur]={};
+    Object.keys(tabel).forEach(k=>{
+      const v=tabel[k];
+      if(v && v.harga>0) db.hargaPerDapur[dapur][k]={nama:v.nama||k, harga:v.harga};
+    });
+  });
 }
 /* --- kelola daftar rekening & penanda tangan --- */
 function kunciRek(r){ return `${(r.bank||'').trim()}|${(r.an||'').trim()}|${(r.rek||'').trim()}`.toLowerCase(); }
@@ -563,7 +644,7 @@ function renderBarang(){
     tr.innerHTML = `
       <td><input type="text" inputmode="decimal" value="${esc(it.qty)}" data-i="${i}" data-k="qty" class="angka"></td>
       <td><input type="text" list="daftarSatuan" value="${esc(it.unit)}" data-i="${i}" data-k="unit"></td>
-      <td><input type="text" value="${esc(it.name)}" data-i="${i}" data-k="name" placeholder="nama barang"></td>
+      <td><input type="text" list="dlBarang" value="${esc(it.name)}" data-i="${i}" data-k="name" placeholder="nama barang" autocomplete="off"></td>
       <td><input type="text" inputmode="numeric" value="${it.price!==''? angkaID(+it.price):''}" data-i="${i}" data-k="price" class="angka"></td>
       <td><button class="hapus-baris" title="Hapus baris" data-del="${i}">×</button></td>`;
     tb.appendChild(tr);
@@ -581,6 +662,18 @@ $('tbodyBarang').addEventListener('input', e=>{
   }else if(k === 'qty'){
     el.value = el.value.replace(/[^\d.,]/g,'');
     items[i].qty = el.value.replace(',','.');
+  }else if(k === 'name'){
+    items[i].name = el.value;
+    // auto-isi harga terakhir bila kolom harga masih kosong
+    if(items[i].price==='' || items[i].price==null){
+      const dapur = $('pelanggan').value.trim();
+      const h = hargaTerakhir(dapur, el.value);
+      if(h){
+        items[i].price = h;
+        const inpHarga = el.closest('tr').querySelector('input[data-k="price"]');
+        if(inpHarga) inpHarga.value = angkaID(h);
+      }
+    }
   }else{
     items[i][k] = el.value;
   }
@@ -757,6 +850,7 @@ function info(t, warna){ const s=$('status'); s.textContent=t; s.style.color = w
   setTimeout(()=>{ if(s.textContent===t) s.textContent=''; }, 6000); }
 
 function ambilForm(){
+  const inv0 = idAktif ? db.invoices.find(x=>x.id===idAktif) : null;
   return {
     id: idAktif || ('inv_'+Date.now()),
     no: $('noInv').value.trim(),
@@ -767,13 +861,28 @@ function ambilForm(){
     bank: {bank:$('bank').value.trim(), an:$('an').value.trim(), rek:$('rek').value.trim()},
     ttdNama: $('ttdNama').value.trim(),
     catatan: $('catatan').value.trim(),
+    dibuat: (inv0 && inv0.dibuat) ? inv0.dibuat : new Date().toISOString(),  // waktu pembuatan (tetap)
     diubah: new Date().toISOString()
   };
+}
+// batas edit 48 jam sejak dibuat
+const BATAS_EDIT_MS = 48*60*60*1000;
+function lewatBatasEdit(inv){
+  if(!inv || !inv.dibuat) return false;
+  return (Date.now() - new Date(inv.dibuat).getTime()) > BATAS_EDIT_MS;
 }
 async function simpanInvoice(diam){
   const inv = ambilForm();
   if(!inv.no){ if(!diam) info('Isi nomor invoice dulu.','var(--merah)'); return; }
   if(inv.items.length===0){ if(!diam) info('Belum ada barang.','var(--merah)'); return; }
+  // peringatan edit setelah 48 jam
+  const lama = db.invoices.find(x=>x.id===inv.id);
+  if(lama && lewatBatasEdit(lama) && !diam){
+    const jam = Math.floor((Date.now()-new Date(lama.dibuat).getTime())/3600000);
+    const lanjut = confirm('⚠ Invoice ini dibuat '+jam+' jam lalu (lebih dari 48 jam).\n'+
+      'Sebaiknya invoice lama tidak diubah demi ketertiban pembukuan.\nTetap simpan perubahan?');
+    if(!lanjut){ info('Perubahan dibatalkan.','var(--merah)'); return; }
+  }
   // cegah nomor kembar dengan invoice lain
   const kembar = db.invoices.find(x=>x.no===inv.no && x.id!==inv.id);
   if(kembar && !diam){
@@ -788,6 +897,13 @@ async function simpanInvoice(diam){
   db.bank = inv.bank;
   tambahRekening(inv.bank, true);          // simpan rekening ke daftar pilihan
   tambahPenandatangan(inv.ttdNama, true);  // simpan penanda tangan ke daftar pilihan
+  // catat barang & harga per dapur untuk suggest berikutnya
+  inv.items.forEach(it=>{
+    const nama=(it.name||'').trim(); if(!nama) return;
+    tambahBarang(nama, true);
+    const harga=+it.price||0;
+    if(harga>0){ catatHarga(inv.pelanggan, nama, harga, true); catatHarga('_umum', nama, harga, true); }
+  });
   await simpanDB();
   isiDatalistPelanggan();
   sbDorongInvoice(inv);       // sinkron online (bila terhubung)
@@ -814,7 +930,11 @@ function renderRiwayat(){
 }
 $('isiRiwayat').addEventListener('click', async e=>{
   const b=e.target.dataset;
-  if(b.buka){ isiForm(db.invoices.find(x=>x.id===b.buka)); $('dlgRiwayat').close(); }
+  if(b.buka){
+    const invBuka = db.invoices.find(x=>x.id===b.buka);
+    isiForm(invBuka); $('dlgRiwayat').close();
+    if(lewatBatasEdit(invBuka)) info('⚠ Invoice ini sudah lebih dari 48 jam — sebaiknya tidak diubah.','var(--merah)');
+  }
   if(b.salin){
     const s=JSON.parse(JSON.stringify(db.invoices.find(x=>x.id===b.salin)));
     s.id=null; isiForm(s,true); $('dlgRiwayat').close();
@@ -830,6 +950,99 @@ $('isiRiwayat').addEventListener('click', async e=>{
 });
 $('btnRiwayat').addEventListener('click', ()=>{ renderRiwayat(); $('dlgRiwayat').showModal(); });
 $('btnTutupRiwayat').addEventListener('click', ()=>$('dlgRiwayat').close());
+
+/* ================== REKAP PER DAPUR ================== */
+function daftarDapur(){
+  return [...new Set(db.invoices.map(x=>(x.pelanggan||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'id'));
+}
+function isiPilihanDapur(){
+  const sel=$('pilihDapur'); if(!sel) return;
+  const dpr=daftarDapur();
+  const skr=sel.value;
+  sel.innerHTML = dpr.length ? dpr.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('')
+                             : '<option value="">(belum ada dapur)</option>';
+  if(dpr.includes(skr)) sel.value=skr;
+}
+function hitungRekap(dapur){
+  const inv = db.invoices.filter(x=>(x.pelanggan||'').trim()===dapur)
+    .sort((a,b)=>(b.tanggal||'').localeCompare(a.tanggal||''));
+  const totalBelanja = inv.reduce((s,x)=>s+(+x.total||0),0);
+  // rekap barang: total qty & nilai per barang
+  const barang = {};
+  inv.forEach(x=>(x.items||[]).forEach(it=>{
+    const nama=(it.name||'').trim(); if(!nama) return;
+    const key=nama.toLowerCase();
+    if(!barang[key]) barang[key]={nama, unit:it.unit||'', qty:0, nilai:0};
+    barang[key].qty += parseFloat(it.qty)||0;
+    barang[key].nilai += Math.round((parseFloat(it.qty)||0)*(+it.price||0));
+  }));
+  const barangArr = Object.values(barang).sort((a,b)=>b.nilai-a.nilai);
+  return {inv, totalBelanja, barangArr};
+}
+function renderRekap(){
+  const dapur=$('pilihDapur').value;
+  const wadah=$('isiRekap');
+  if(!dapur){ wadah.innerHTML='<div class="kosong">Belum ada dapur.</div>'; return; }
+  const {inv, totalBelanja, barangArr}=hitungRekap(dapur);
+  let h=`<div class="panel" style="margin-bottom:12px">
+    <h2>Ringkasan — ${esc(dapur)}</h2>
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
+      <div><div class="kecil">Jumlah Invoice</div><b style="font-size:18px">${inv.length}</b></div>
+      <div><div class="kecil">Total Belanja</div><b style="font-size:18px;color:var(--navy)">${rupiah(totalBelanja)}</b></div>
+    </div></div>`;
+  // daftar invoice
+  h+=`<div class="panel" style="margin-bottom:12px"><h2>Daftar Invoice</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:var(--abu)"><th style="padding:4px">No</th><th>Tanggal</th><th style="text-align:right">Total</th></tr>`;
+  inv.forEach(x=>{ h+=`<tr style="border-top:1px solid var(--garis)">
+    <td style="padding:4px;font-family:var(--font-mono)">${esc(x.no)}</td>
+    <td>${tglIndo(x.tanggal)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${rupiah(+x.total||0)}</td></tr>`; });
+  h+=`</table></div>`;
+  // rekap barang
+  h+=`<div class="panel"><h2>Rekap Barang</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:var(--abu)"><th style="padding:4px">Barang</th><th style="text-align:right">Total Qty</th><th style="text-align:right">Total Nilai</th></tr>`;
+  barangArr.forEach(bg=>{ h+=`<tr style="border-top:1px solid var(--garis)">
+    <td style="padding:4px">${esc(bg.nama)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(bg.qty)} ${esc(bg.unit)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${rupiah(bg.nilai)}</td></tr>`; });
+  h+=`</table></div>`;
+  wadah.innerHTML=h;
+}
+$('btnRekap').addEventListener('click', ()=>{ isiPilihanDapur(); renderRekap(); $('dlgRekap').showModal(); });
+$('btnTutupRekap').addEventListener('click', ()=>$('dlgRekap').close());
+$('pilihDapur').addEventListener('change', renderRekap);
+$('btnRekapCsv').addEventListener('click', ()=>{
+  const dapur=$('pilihDapur').value; if(!dapur) return;
+  const {inv, totalBelanja, barangArr}=hitungRekap(dapur);
+  let csv='REKAP DAPUR;'+dapur+'\n\nDAFTAR INVOICE\nNo;Tanggal;Total\n';
+  inv.forEach(x=>csv+=`${x.no};${tglIndo(x.tanggal)};${+x.total||0}\n`);
+  csv+=`;;\nTOTAL BELANJA;;${totalBelanja}\n\nREKAP BARANG\nBarang;Total Qty;Satuan;Total Nilai\n`;
+  barangArr.forEach(bg=>csv+=`${bg.nama};${fmtQty(bg.qty)};${bg.unit};${bg.nilai}\n`);
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='rekap-'+dapur.replace(/[^\w]+/g,'_')+'.csv'; a.click(); URL.revokeObjectURL(a.href);
+});
+$('btnRekapCetak').addEventListener('click', ()=>{
+  const dapur=$('pilihDapur').value; if(!dapur) return;
+  const {inv, totalBelanja, barangArr}=hitungRekap(dapur);
+  const w=window.open('','_blank');
+  let h=`<html><head><title>Rekap ${esc(dapur)}</title><style>
+    body{font-family:sans-serif;padding:20px;color:#111}h1{color:#16337F;font-size:18px}
+    h2{font-size:14px;margin-top:18px;border-bottom:2px solid #16337F;padding-bottom:3px}
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+    th,td{border:1px solid #999;padding:4px 6px}th{background:#EDF3FB}
+    .r{text-align:right}</style></head><body>
+    <h1>REKAP DAPUR — ${esc(dapur)}</h1>
+    <p>Jumlah Invoice: <b>${inv.length}</b> &nbsp;·&nbsp; Total Belanja: <b>${rupiah(totalBelanja)}</b></p>
+    <h2>Daftar Invoice</h2><table><tr><th>No</th><th>Tanggal</th><th class="r">Total</th></tr>`;
+  inv.forEach(x=>h+=`<tr><td>${esc(x.no)}</td><td>${tglIndo(x.tanggal)}</td><td class="r">${rupiah(+x.total||0)}</td></tr>`);
+  h+=`</table><h2>Rekap Barang</h2><table><tr><th>Barang</th><th class="r">Total Qty</th><th class="r">Total Nilai</th></tr>`;
+  barangArr.forEach(bg=>h+=`<tr><td>${esc(bg.nama)}</td><td class="r">${fmtQty(bg.qty)} ${esc(bg.unit)}</td><td class="r">${rupiah(bg.nilai)}</td></tr>`);
+  h+=`</table></body></html>`;
+  w.document.write(h); w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+});
 
 /* ================== FORM BARU / ISI ================== */
 function isiForm(inv, nomorBaru){
@@ -858,7 +1071,7 @@ function formBaru(){
   $('bank').value = rt.bank||'';
   $('an').value = rt.an||'';
   $('rek').value = rt.rek||'';
-  $('ttdNama').value = db.penandatanganList[0] || '';
+  $('ttdNama').value = db.penandatanganList[0] || 'Admin';
   $('catatan').value = '';
   $('pilihRek').value = '';
   items = [{qty:'',unit:'',name:'',price:''}];
@@ -871,6 +1084,9 @@ $('tgl').addEventListener('change', ()=>{
   perbarui();
 });
 ['noInv','pelanggan','bank','an','rek','catatan','ttdNama'].forEach(id=> $(id).addEventListener('input', perbarui));
+// saat dapur (pelanggan) berganti, perbarui harga suggest
+$('pelanggan').addEventListener('input', isiDatalistBarang);
+$('pelanggan').addEventListener('change', isiDatalistBarang);
 
 // pilih rekening tersimpan -> isi otomatis bank/an/rek
 $('pilihRek').addEventListener('change', ()=>{
@@ -887,6 +1103,17 @@ function isiDatalistPelanggan(){
   $('daftarPelanggan').innerHTML = set.map(p=>`<option value="${esc(p)}">`).join('');
   isiPilihanRekening();
   isiPilihanPenandatangan();
+  isiDatalistBarang();
+}
+function isiDatalistBarang(){
+  const dl=$('dlBarang'); if(!dl) return;
+  const dapur = $('pelanggan') ? $('pelanggan').value.trim() : '';
+  // tampilkan nama barang + harga terakhir (dari dapur ini bila ada) sebagai petunjuk
+  dl.innerHTML = db.barangList.map(nm=>{
+    const h = hargaTerakhir(dapur, nm);
+    const label = h ? `${nm} — Rp ${angkaID(h)}` : nm;
+    return `<option value="${esc(nm)}" label="${esc(label)}">`;
+  }).join('');
 }
 function isiPilihanRekening(){
   const sel = $('pilihRek'); if(!sel) return;
@@ -954,9 +1181,12 @@ $('fileImpor').addEventListener('change', e=>{
       if(d.bank) db.bank = d.bank;
       if(Array.isArray(d.rekeningList)) d.rekeningList.forEach(r=>tambahRekening(r, true));
       if(Array.isArray(d.penandatanganList)) d.penandatanganList.forEach(n=>tambahPenandatangan(n, true));
+      if(Array.isArray(d.barangList)) d.barangList.forEach(nm=>tambahBarang(nm, true));
+      if(d.hargaPerDapur) gabungHarga(d.hargaPerDapur);
       if(d.alamat!==undefined) db.alamat = d.alamat;
       if(d.telp!==undefined) db.telp = d.telp;
       if(d.counter) Object.keys(d.counter).forEach(k=>{ db.counter[k]=Math.max(db.counter[k]||0, d.counter[k]); });
+      bangunDaftarDariInvoice();
       await simpanDB(); isiDatalistPelanggan(); perbarui();
       sbDorongSemua();
       alert('Impor selesai ✓');
@@ -1052,10 +1282,13 @@ async function sbTarik(){
     if(d.bank && (d.bank.rek||d.bank.an||d.bank.bank)) db.bank = d.bank;
     if(Array.isArray(d.rekeningList)) d.rekeningList.forEach(r=>tambahRekening(r, true));
     if(Array.isArray(d.penandatanganList)) d.penandatanganList.forEach(n=>tambahPenandatangan(n, true));
+    if(Array.isArray(d.barangList)) d.barangList.forEach(nm=>tambahBarang(nm, true));
+    if(d.hargaPerDapur) gabungHarga(d.hargaPerDapur);
     if(d.alamat) db.alamat = d.alamat;
     if(d.telp) db.telp = d.telp;
     if(d.counter) Object.keys(d.counter).forEach(k=>{ db.counter[k]=Math.max(db.counter[k]||0, d.counter[k]); });
   }
+  bangunDaftarDariInvoice();
   await simpanDB(); isiDatalistPelanggan(); perbarui();
 }
 async function sbDorongSemua(){
@@ -1082,7 +1315,7 @@ async function sbHapusInvoice(id){
 async function sbDorongPengaturan(){
   if(!sb) return;
   try{
-    await sb.from('pengaturan').upsert({id:1, data:{bank:db.bank, rekeningList:db.rekeningList, penandatanganList:db.penandatanganList, alamat:db.alamat, telp:db.telp, counter:db.counter}});
+    await sb.from('pengaturan').upsert({id:1, data:{bank:db.bank, rekeningList:db.rekeningList, penandatanganList:db.penandatanganList, barangList:db.barangList, hargaPerDapur:db.hargaPerDapur, alamat:db.alamat, telp:db.telp, counter:db.counter}});
   }catch(e){}
 }
 function sbLangganan(){
