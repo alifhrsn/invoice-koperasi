@@ -455,6 +455,8 @@ const simpanan = (typeof window.storage !== 'undefined' && window.storage) ? win
   list: async (p='') => ({keys:Object.keys(localStorage).filter(k=>k.startsWith(p))})
 };
 const ALAMAT_DEFAULT = '';
+// Rekening default bawaan koperasi — otomatis tersedia sebagai pilihan & terisi di invoice baru
+const REKENING_DEFAULT = { bank:'Mandiri', an:'Koperasi Pemasaran Mitra Sanur', rek:'006-00-8007878-9' };
 const LEBAR = 78;          // kolom teks dot matrix (10 CPI, kertas 210 mm)
 const MIN_BARIS_PDF = 22;  // baris kosong minimum (A4 portrait muat lebih banyak)
 
@@ -521,6 +523,12 @@ async function muatDB(){
   if(!db.hargaPerDapur || typeof db.hargaPerDapur!=='object') db.hargaPerDapur = {};
   // migrasi: bila ada rekening tunggal lama, masukkan ke daftar
   if(db.bank && (db.bank.rek||db.bank.an||db.bank.bank)) tambahRekening(db.bank, true);
+  // rekening default koperasi: pastikan ada di daftar (paling atas) & jadi default aktif
+  tambahRekening(REKENING_DEFAULT, true);
+  const kd = kunciRek(REKENING_DEFAULT);
+  db.rekeningList = [db.rekeningList.find(r=>kunciRek(r)===kd) || REKENING_DEFAULT,
+                     ...db.rekeningList.filter(r=>kunciRek(r)!==kd)];
+  if(!db.bank || !(db.bank.rek||db.bank.an||db.bank.bank)) db.bank = {...REKENING_DEFAULT};
   // migrasi: bangun daftar barang & harga dari invoice yang sudah ada (tanpa menghapus apa pun)
   bangunDaftarDariInvoice();
 }
