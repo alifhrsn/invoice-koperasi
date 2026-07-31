@@ -526,7 +526,8 @@ async function muatDB(){
   // pastikan daftar tersedia
   if(!Array.isArray(db.rekeningList)) db.rekeningList = [];
   if(!Array.isArray(db.penandatanganList)) db.penandatanganList = [];
-  if(!db.penandatanganList.some(x=>x.toLowerCase()==='admin')) db.penandatanganList.push('Admin');
+  // Admin selalu ada & di urutan teratas daftar penanda tangan
+  db.penandatanganList = ['Admin', ...db.penandatanganList.filter(x=>x.toLowerCase()!=='admin')];
   if(!Array.isArray(db.barangList)) db.barangList = [];
   if(!db.hargaPerDapur || typeof db.hargaPerDapur!=='object') db.hargaPerDapur = {};
   // migrasi: bila ada rekening tunggal lama, masukkan ke daftar
@@ -1128,7 +1129,7 @@ function formBaru(){
   $('bank').value = rt.bank||'';
   $('an').value = rt.an||'';
   $('rek').value = rt.rek||'';
-  $('ttdNama').value = db.penandatanganList[0] || 'Admin';
+  $('ttdNama').value = 'Admin';   // default selalu Admin (dengan ttd & cap otomatis)
   $('catatan').value = '';
   $('pilihRek').value = '';
   items = [{qty:'',unit:'',name:'',price:''}];
