@@ -177,6 +177,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <div class="spacer"></div>
   <span id="sbStatus" style="font-size:11.5px;background:rgba(255,255,255,.14);padding:6px 12px;border-radius:99px"><span style="color:#9AA6B8">●</span> Offline — data lokal</span>
   <button class="btn btn-putih" id="btnBaru">+ Invoice Baru</button>
+  <button class="btn btn-putih" id="btnDashboard">📈 Dashboard</button>
   <button class="btn btn-biru" id="btnRiwayat">Riwayat</button>
   <button class="btn btn-biru" id="btnRekap">📊 Rekap Dapur</button>
   <button class="btn btn-biru" id="btnPengaturan" title="Pengaturan">⚙ Pengaturan</button>
@@ -263,13 +264,26 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 
     <div class="panel">
       <h2>Catatan & Cetak</h2>
-      <label for="catatan">Catatan (opsional)</label>
-      <textarea id="catatan" rows="2" placeholder="cth: Pembayaran maks. 7 hari"></textarea>
+      <div class="baris">
+        <div style="max-width:150px">
+          <label for="statusBayar">Status Bayar</label>
+          <select id="statusBayar">
+            <option value="Belum">🔴 Belum Bayar</option>
+            <option value="Sebagian">🟡 Sebagian</option>
+            <option value="Lunas">🟢 Lunas</option>
+          </select>
+        </div>
+        <div>
+          <label for="catatan">Catatan (opsional)</label>
+          <input id="catatan" type="text" placeholder="cth: Pembayaran maks. 7 hari">
+        </div>
+      </div>
       <div class="aksi">
         <button class="btn btn-hijau" id="btnSimpan">💾 Simpan</button>
         <button class="btn btn-biru" id="btnCetakPdf">🖨 Cetak / PDF</button>
         <button class="btn btn-biru" id="btnCetakDot">🖨 Cetak Dot Matrix</button>
         <button class="btn btn-abu" id="btnTxt">⬇ File .txt</button>
+        <button class="btn" id="btnWa" style="background:#25D366;color:#fff">📱 Kirim WhatsApp</button>
       </div>
       <div class="status" id="status"></div>
       <div class="kecil" style="background:#FFF7E6;border:1px solid #F0D9A0;border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.6">
@@ -312,6 +326,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
           </tbody></table>
           <table class="meta"><tbody>
             <tr><td>Tuan / Toko</td><td>:</td><td style="font-weight:700" id="pPel"></td></tr>
+            <tr><td>Status</td><td>:</td><td id="pStatus"></td></tr>
           </tbody></table>
         </div>
         <table class="brg">
@@ -373,6 +388,23 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
       <button class="btn btn-abu" id="btnRekapCsv">⬇ Ekspor CSV</button>
     </div>
     <div id="isiRekap"></div>
+  </div>
+</dialog>
+
+<!-- ============ DASHBOARD ============ -->
+<dialog id="dlgDashboard">
+  <div class="dlg-kepala">
+    <b>📈 Dashboard Ringkasan</b>
+    <button class="btn btn-putih" id="btnTutupDashboard">Tutup</button>
+  </div>
+  <div class="dlg-isi">
+    <div class="baris" style="margin-bottom:12px">
+      <div style="max-width:180px">
+        <label for="dashPeriode">Periode</label>
+        <select id="dashPeriode"></select>
+      </div>
+    </div>
+    <div id="isiDashboard"></div>
   </div>
 </dialog>
 
@@ -753,6 +785,12 @@ function renderPdf(tot){
   $('pNo').textContent = $('noInv').value || '—';
   $('pTgl').textContent = tglIndo($('tgl').value);
   $('pPel').textContent = ($('pelanggan').value||'—').toUpperCase();
+  if($('pStatus') && $('statusBayar')){
+    const st = $('statusBayar').value;
+    const warna = st==='Lunas'?'#1a7f3c':(st==='Sebagian'?'#b8860b':'#c0392b');
+    const label = st==='Lunas'?'LUNAS':(st==='Sebagian'?'DIBAYAR SEBAGIAN':'BELUM BAYAR');
+    $('pStatus').innerHTML = `<b style="color:${warna}">${label}</b>`;
+  }
   $('pAlamat').textContent = barisAlamat();
   const body = $('pBody');
   body.innerHTML = '';
@@ -895,6 +933,38 @@ $('btnTxt').addEventListener('click', ()=>{
   info('File .txt diunduh — kirim ke printer, contoh: copy /b file.txt LPT1');
 });
 
+// Kirim ringkasan invoice via WhatsApp
+function pesanWa(){
+  const rows = barisValid();
+  const tot = totalSemua();
+  const L = [];
+  L.push('*KOPERASI MITRA SANUR*');
+  L.push('INVOICE: '+($('noInv').value||'-'));
+  L.push('Tanggal: '+tglIndo($('tgl').value));
+  L.push('Kepada: '+($('pelanggan').value||'-'));
+  L.push('');
+  rows.forEach((it,i)=>{
+    L.push(`${i+1}. ${it.name} — ${fmtQty(it.qty)} ${it.unit} x ${rupiah(+it.price||0)} = ${rupiah(subtotal(it))}`);
+  });
+  L.push('');
+  L.push('*TOTAL: '+rupiah(tot)+'*');
+  L.push('Terbilang: '+terbilang(tot));
+  const st=$('statusBayar').value;
+  L.push('Status: '+(st==='Lunas'?'✅ LUNAS':(st==='Sebagian'?'🟡 Dibayar sebagian':'🔴 Belum bayar')));
+  const b=$('bank').value.trim(), an=$('an').value.trim(), rek=$('rek').value.trim();
+  if(rek){ L.push(''); L.push('Pembayaran: Bank '+b+' a/n '+an); L.push('No. Rek: '+rek); }
+  const cat=$('catatan').value.trim();
+  if(cat){ L.push(''); L.push('Catatan: '+cat); }
+  return L.join('\n');
+}
+$('btnWa').addEventListener('click', async ()=>{
+  if(barisValid().length===0){ info('Belum ada barang untuk dikirim.','var(--merah)'); return; }
+  await simpanInvoice(true);   // simpan dulu
+  const teks = encodeURIComponent(pesanWa());
+  window.open('https://wa.me/?text='+teks, '_blank');
+  info('WhatsApp dibuka — pilih kontak dapur untuk mengirim.');
+});
+
 /* ================== SIMPAN & RIWAYAT ================== */
 function info(t, warna){ const s=$('status'); s.textContent=t; s.style.color = warna||'var(--hijau)';
   setTimeout(()=>{ if(s.textContent===t) s.textContent=''; }, 6000); }
@@ -911,6 +981,7 @@ function ambilForm(){
     bank: {bank:$('bank').value.trim(), an:$('an').value.trim(), rek:$('rek').value.trim()},
     ttdNama: $('ttdNama').value.trim(),
     catatan: $('catatan').value.trim(),
+    status: (inv0 && inv0.status) ? inv0.status : ($('statusBayar') ? $('statusBayar').value : 'Belum'),
     dibuat: (inv0 && inv0.dibuat) ? inv0.dibuat : new Date().toISOString(),  // waktu pembuatan (tetap)
     diubah: new Date().toISOString()
   };
@@ -987,15 +1058,35 @@ function renderRiwayat(){
   db.invoices.forEach(inv=>{
     const el=document.createElement('div');
     el.className='item-riwayat';
+    const st = inv.status||'Belum';
+    const warna = st==='Lunas'?'#1a7f3c':(st==='Sebagian'?'#b8860b':'#c0392b');
+    const emo = st==='Lunas'?'🟢':(st==='Sebagian'?'🟡':'🔴');
     el.innerHTML=`<div class="info"><b class="nom">${esc(inv.no)}</b>
       <span>${tglIndo(inv.tanggal)} · ${esc(inv.pelanggan||'-')} · ${inv.items.length} barang</span>
-      <span style="font-weight:700;color:var(--tinta)">${rupiah(inv.total)}</span></div>
+      <span style="font-weight:700;color:var(--tinta)">${rupiah(inv.total)} &nbsp; <span style="color:${warna};font-weight:700">${emo} ${st}</span></span></div>
+      <select data-status="${inv.id}" title="Ubah status bayar" style="max-width:120px">
+        <option value="Belum"${st==='Belum'?' selected':''}>🔴 Belum</option>
+        <option value="Sebagian"${st==='Sebagian'?' selected':''}>🟡 Sebagian</option>
+        <option value="Lunas"${st==='Lunas'?' selected':''}>🟢 Lunas</option>
+      </select>
       <button class="btn btn-biru" data-buka="${inv.id}">Buka</button>
       <button class="btn btn-abu" data-salin="${inv.id}">Duplikat</button>
       <button class="btn btn-bahaya" data-hapus="${inv.id}">Hapus</button>`;
     wadah.appendChild(el);
   });
 }
+// ganti status cepat dari riwayat
+$('isiRiwayat').addEventListener('change', async e=>{
+  const id=e.target.dataset.status;
+  if(!id) return;
+  const inv=db.invoices.find(x=>x.id===id);
+  if(inv){
+    inv.status=e.target.value; inv.diubah=new Date().toISOString();
+    await simpanDB(); sbDorongInvoice(inv); renderRiwayat();
+    if(idAktif===id && $('statusBayar')){ $('statusBayar').value=inv.status; perbarui(); }
+    info('Status '+inv.no+' → '+inv.status);
+  }
+});
 $('isiRiwayat').addEventListener('click', async e=>{
   const b=e.target.dataset;
   if(b.buka){
@@ -1112,6 +1203,100 @@ $('btnRekapCetak').addEventListener('click', ()=>{
   w.document.write(h); w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 });
 
+/* ================== DASHBOARD ================== */
+function daftarPeriode(){
+  const set = new Set();
+  db.invoices.forEach(x=>{ if(x.tanggal && /^\d{4}-\d{2}/.test(x.tanggal)) set.add(x.tanggal.slice(0,7)); });
+  const arr = [...set].sort().reverse();
+  return arr;
+}
+function labelPeriode(kb){
+  const bulan=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
+  const [y,m]=kb.split('-'); return `${bulan[+m-1]} ${y}`;
+}
+function isiPilihanPeriode(){
+  const sel=$('dashPeriode'); const arr=daftarPeriode();
+  const skr=sel.value;
+  sel.innerHTML = '<option value="_semua">Semua Periode</option>' +
+    arr.map(kb=>`<option value="${kb}">${labelPeriode(kb)}</option>`).join('');
+  if(skr && (skr==='_semua'||arr.includes(skr))) sel.value=skr;
+}
+function hitungDashboard(periode){
+  let inv = db.invoices.slice();
+  if(periode && periode!=='_semua') inv = inv.filter(x=>(x.tanggal||'').slice(0,7)===periode);
+  const total = inv.reduce((s,x)=>s+(+x.total||0),0);
+  // per status
+  const st = {Lunas:0, Sebagian:0, Belum:0};
+  const stNilai = {Lunas:0, Sebagian:0, Belum:0};
+  inv.forEach(x=>{ const s=x.status||'Belum'; if(st[s]===undefined){st[s]=0;stNilai[s]=0;} st[s]++; stNilai[s]+=(+x.total||0); });
+  // per dapur
+  const dapur={};
+  inv.forEach(x=>{ const d=(x.pelanggan||'(tanpa nama)').trim()||'(tanpa nama)';
+    if(!dapur[d]) dapur[d]={jml:0,total:0}; dapur[d].jml++; dapur[d].total+=(+x.total||0); });
+  const dapurArr=Object.entries(dapur).map(([nama,v])=>({nama,...v})).sort((a,b)=>b.total-a.total);
+  // barang terlaris (by nilai)
+  const brg={};
+  inv.forEach(x=>(x.items||[]).forEach(it=>{ const nm=(it.name||'').trim(); if(!nm)return;
+    const k=nm.toLowerCase(); if(!brg[k])brg[k]={nama:nm,unit:it.unit||'',qty:0,nilai:0};
+    brg[k].qty+=parseFloat(it.qty)||0; brg[k].nilai+=Math.round((parseFloat(it.qty)||0)*(+it.price||0)); }));
+  const brgArr=Object.values(brg).sort((a,b)=>b.nilai-a.nilai).slice(0,10);
+  return {inv, total, st, stNilai, dapurArr, brgArr};
+}
+function kartu(judul, nilai, warna, sub){
+  return `<div style="flex:1;min-width:130px;background:#fff;border:1px solid var(--garis);border-radius:10px;padding:12px 14px">
+    <div class="kecil">${judul}</div>
+    <b style="font-size:19px;color:${warna||'var(--navy)'}">${nilai}</b>
+    ${sub?`<div class="kecil" style="margin-top:2px">${sub}</div>`:''}</div>`;
+}
+function renderDashboard(){
+  const periode=$('dashPeriode').value;
+  const d=hitungDashboard(periode);
+  const wadah=$('isiDashboard');
+  if(d.inv.length===0){ wadah.innerHTML='<div class="kosong">Belum ada invoice pada periode ini.</div>'; return; }
+  let h='';
+  // kartu ringkasan
+  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    ${kartu('Total Invoice', d.inv.length, 'var(--navy)')}
+    ${kartu('Total Penjualan', rupiah(d.total), 'var(--navy)')}
+    ${kartu('🟢 Lunas', rupiah(d.stNilai.Lunas), '#1a7f3c', d.st.Lunas+' invoice')}
+    ${kartu('🟡 Sebagian', rupiah(d.stNilai.Sebagian), '#b8860b', d.st.Sebagian+' invoice')}
+    ${kartu('🔴 Belum Bayar', rupiah(d.stNilai.Belum), '#c0392b', d.st.Belum+' invoice')}
+  </div>`;
+  // bar status (visual)
+  const totNilai=d.total||1;
+  const pL=Math.round(d.stNilai.Lunas/totNilai*100), pS=Math.round(d.stNilai.Sebagian/totNilai*100), pB=100-pL-pS;
+  h+=`<div class="panel" style="margin-bottom:12px"><h2>Proporsi Pembayaran (nilai)</h2>
+    <div style="display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--garis)">
+      <div style="width:${pL}%;background:#2fa84f" title="Lunas"></div>
+      <div style="width:${pS}%;background:#e0b020" title="Sebagian"></div>
+      <div style="width:${pB}%;background:#d0524a" title="Belum"></div>
+    </div>
+    <div class="kecil" style="margin-top:6px">🟢 Lunas ${pL}% &nbsp; 🟡 Sebagian ${pS}% &nbsp; 🔴 Belum ${pB}%</div></div>`;
+  // per dapur
+  h+=`<div class="panel" style="margin-bottom:12px"><h2>Penjualan per Dapur</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:var(--abu)"><th style="padding:4px">Dapur</th><th style="text-align:right">Invoice</th><th style="text-align:right">Total</th></tr>`;
+  const maxD=d.dapurArr[0]?d.dapurArr[0].total:1;
+  d.dapurArr.forEach(x=>{ h+=`<tr style="border-top:1px solid var(--garis)">
+    <td style="padding:4px">${esc(x.nama)}<div style="height:5px;background:linear-gradient(90deg,var(--biru) ${Math.round(x.total/maxD*100)}%, #eee ${Math.round(x.total/maxD*100)}%);border-radius:3px;margin-top:3px"></div></td>
+    <td style="text-align:right">${x.jml}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${rupiah(x.total)}</td></tr>`; });
+  h+=`</table></div>`;
+  // barang terlaris
+  h+=`<div class="panel"><h2>10 Barang Nilai Tertinggi</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:var(--abu)"><th style="padding:4px">Barang</th><th style="text-align:right">Total Qty</th><th style="text-align:right">Total Nilai</th></tr>`;
+  d.brgArr.forEach(bg=>{ h+=`<tr style="border-top:1px solid var(--garis)">
+    <td style="padding:4px">${esc(bg.nama)}</td>
+    <td style="text-align:right">${fmtQty(bg.qty)} ${esc(bg.unit)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums">${rupiah(bg.nilai)}</td></tr>`; });
+  h+=`</table></div>`;
+  wadah.innerHTML=h;
+}
+$('btnDashboard').addEventListener('click', ()=>{ isiPilihanPeriode(); renderDashboard(); $('dlgDashboard').showModal(); });
+$('btnTutupDashboard').addEventListener('click', ()=>$('dlgDashboard').close());
+$('dashPeriode').addEventListener('change', renderDashboard);
+
 /* ================== FORM BARU / ISI ================== */
 function isiForm(inv, nomorBaru){
   idAktif = nomorBaru ? null : inv.id;
@@ -1123,6 +1308,7 @@ function isiForm(inv, nomorBaru){
   $('rek').value = inv.bank?.rek||'';
   $('ttdNama').value = inv.ttdNama||'';
   $('catatan').value = inv.catatan||'';
+  if($('statusBayar')) $('statusBayar').value = inv.status || 'Belum';
   $('pilihRek').value = '';
   items = inv.items.map(x=>({qty:String(x.qty),unit:x.unit,name:x.name,price:x.price}));
   if(items.length===0) items.push({qty:'',unit:'',name:'',price:''});
@@ -1141,6 +1327,7 @@ function formBaru(){
   $('rek').value = rt.rek||'';
   $('ttdNama').value = 'Admin';   // default selalu Admin (dengan ttd & cap otomatis)
   $('catatan').value = '';
+  if($('statusBayar')) $('statusBayar').value = 'Belum';
   $('pilihRek').value = '';
   items = [{qty:'',unit:'',name:'',price:''}];
   renderBarang();
@@ -1152,6 +1339,7 @@ $('tgl').addEventListener('change', ()=>{
   perbarui();
 });
 ['noInv','pelanggan','bank','an','rek','catatan','ttdNama'].forEach(id=> $(id).addEventListener('input', perbarui));
+$('statusBayar').addEventListener('change', perbarui);
 // saat dapur (pelanggan) berganti, perbarui harga suggest
 $('pelanggan').addEventListener('input', isiDatalistBarang);
 $('pelanggan').addEventListener('change', isiDatalistBarang);
