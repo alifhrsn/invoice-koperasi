@@ -421,6 +421,9 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
           <li>Di menu <b>Project Settings → API</b>: salin <b>Project URL</b> dan <b>anon key</b>, tempel ke kolom di atas, lalu klik <b>Hubungkan</b>.</li>
           <li>Ulangi langkah 3 di setiap perangkat lain (HP/komputer kasir) — data akan sinkron otomatis secara realtime.</li>
         </ol>
+        <div class="kecil" style="background:#FFF7E6;border:1px solid #F0D9A0;border-radius:8px;padding:8px 10px;margin-bottom:8px;line-height:1.5">
+          <b>Sudah pernah pakai?</b> Jalankan ulang SQL di bawah sekali lagi (aman, tidak menghapus data) untuk mengaktifkan <b>anti-duplikat nomor</b> saat banyak staff mengisi bersamaan.
+        </div>
         <textarea id="sbSql" readonly rows="9" style="font-family:var(--font-mono);font-size:11px"></textarea>
         <button class="btn btn-abu" id="btnSalinSql" style="margin-top:6px">Salin SQL</button>
         <div class="kecil" style="margin-top:6px;color:var(--merah)">Perhatian: dengan pengaturan ini, siapa pun yang memegang URL + anon key dapat membaca/mengubah data. Jangan bagikan key ke pihak luar koperasi.</div>
@@ -931,13 +934,20 @@ async function simpanInvoice(diam){
     if(!lanjut){ info('Perubahan dibatalkan.','var(--merah)'); return; }
   }
   // cegah nomor kembar dengan invoice lain
+  const invBaru = !db.invoices.some(x=>x.id===inv.id);
+  const nomorAuto = /^INV\/KMS\//.test(inv.no);
+
+  // PENOMORAN ATOMIK: untuk invoice BARU dengan nomor otomatis & sedang online,
+  // ambil nomor dari server (anti-duplikat walau banyak staff bersamaan)
+  if(invBaru && nomorAuto && sb){
+    const noServer = await sbAmbilNomor(inv.tanggal);
+    if(noServer){ inv.no = noServer; if($('noInv')) $('noInv').value = noServer; }
+  }
+
   const kembar = db.invoices.find(x=>x.no===inv.no && x.id!==inv.id);
   if(kembar){
-    const invBaru = !db.invoices.some(x=>x.id===inv.id);
-    const nomorAuto = /^INV\/KMS\//.test(inv.no);
     if(invBaru && nomorAuto){
-      // invoice baru dgn nomor otomatis yang ternyata bentrok (mis. data dari perangkat lain
-      // masuk setelah form dibuka) -> naikkan otomatis ke nomor berikutnya yang bebas
+      // fallback bila offline / RPC gagal: naikkan lokal ke nomor bebas berikutnya
       const noBaru = nomorBerikut(inv.tanggal);
       inv.no = noBaru;
       if($('noInv')) $('noInv').value = noBaru;
@@ -1277,7 +1287,51 @@ create policy "anon semua invoices" on public.invoices
   for all to anon using (true) with check (true);
 create policy "anon semua pengaturan" on public.pengaturan
   for all to anon using (true) with check (true);
-alter publication supabase_realtime add table public.invoices;`;
+do $$ begin
+  alter publication supabase_realtime add table public.invoices;
+exception when duplicate_object then null; when others then null; end $$;
+
+-- ANTI-DUPLIKAT NOMOR (penting untuk banyak staff):
+-- 1) larang dua invoice bernomor sama di database.
+--    Bila saat ini masih ada nomor kembar, pembuatan index dilewati dengan
+--    peringatan (rapikan dulu duplikatnya lalu jalankan ulang script ini).
+do $$ begin
+  create unique index if not exists invoices_no_unik on public.invoices (no);
+exception when unique_violation or duplicate_table then
+  raise notice 'Index unik dilewati: masih ada NOMOR DUPLIKAT. Rapikan dulu lalu jalankan ulang.';
+when others then
+  raise notice 'Index unik dilewati: %', sqlerrm;
+end $$;
+
+-- 2) tabel penghitung nomor per bulan (mis. prefix 'INV/KMS/2026/07')
+create table if not exists public.nomor_counter (
+  prefix text primary key,
+  terakhir int not null default 0
+);
+alter table public.nomor_counter enable row level security;
+drop policy if exists "anon semua counter" on public.nomor_counter;
+create policy "anon semua counter" on public.nomor_counter
+  for all to anon using (true) with check (true);
+
+-- 3) fungsi atomik: ambil nomor berikutnya (aman walau banyak staff bersamaan)
+create or replace function public.ambil_nomor(p_prefix text)
+returns int language plpgsql security definer as $$
+declare n int;
+begin
+  insert into public.nomor_counter (prefix, terakhir) values (p_prefix, 1)
+  on conflict (prefix) do update set terakhir = public.nomor_counter.terakhir + 1
+  returning terakhir into n;
+  return n;
+end; $$;
+grant execute on function public.ambil_nomor(text) to anon;
+
+-- 4) samakan counter dengan invoice yang sudah ada (jalankan sekali agar tidak mundur)
+insert into public.nomor_counter (prefix, terakhir)
+select substring(no from 1 for 15) as prefix, max(
+         coalesce(nullif(regexp_replace(no, '.*/(\\\\d+)$', '\\\\1'), no),'0')::int)
+from public.invoices where no ~ '^INV/KMS/\\\\d{4}/\\\\d{2}/\\\\d+$'
+group by substring(no from 1 for 15)
+on conflict (prefix) do update set terakhir = greatest(public.nomor_counter.terakhir, excluded.terakhir);`;
 $('sbSql').value = SB_SQL;
 $('btnSalinSql').addEventListener('click', async ()=>{
   try{ await navigator.clipboard.writeText(SB_SQL); $('btnSalinSql').textContent='Tersalin ✓'; }
@@ -1349,6 +1403,24 @@ async function sbTarik(){
   bangunDaftarDariInvoice();
   await simpanDB(); isiDatalistPelanggan(); perbarui();
 }
+// Ambil nomor invoice berikutnya secara ATOMIK dari server (anti-duplikat lintas staff).
+// Mengembalikan string nomor lengkap, atau null bila gagal (nanti fallback ke lokal).
+async function sbAmbilNomor(iso){
+  if(!sb) return null;
+  try{
+    const kb = kunciBulan(iso);
+    const [y,m] = kb.split('-');
+    const prefix = `INV/KMS/${y}/${m}`;
+    const {data, error} = await sb.rpc('ambil_nomor', {p_prefix: prefix});
+    if(error) throw error;
+    const n = parseInt(data,10);
+    if(!n || isNaN(n)) return null;
+    return `${prefix}/${String(n).padStart(3,'0')}`;
+  }catch(e){
+    console.warn('RPC ambil_nomor gagal, pakai penomoran lokal:', e.message||e);
+    return null;   // fallback: penomoran lokal tetap jalan
+  }
+}
 async function sbDorongSemua(){
   if(!sb) return;
   try{
@@ -1359,12 +1431,31 @@ async function sbDorongSemua(){
     await sbDorongPengaturan();
   }catch(e){ setSbStatus('Online, sebagian gagal terkirim: '+(e.message||e), true); }
 }
-async function sbDorongInvoice(inv){
+async function sbDorongInvoice(inv, percobaan){
   if(!sb) return;
+  percobaan = percobaan||0;
   try{
     const {error} = await sb.from('invoices').upsert(sbBaris(inv));
     if(error) throw error;
-  }catch(e){ setSbStatus('Online, gagal kirim: '+(e.message||e), true); }
+  }catch(e){
+    const pesan = (e.message||e)+'';
+    // bentrok index unik nomor -> ada staff lain menyelak nomor yg sama.
+    // ambil nomor baru dari server & coba lagi (maks 5x).
+    const bentrokNomor = /duplicate key|invoices_no_unik|unique/i.test(pesan);
+    if(bentrokNomor && /^INV\/KMS\//.test(inv.no) && percobaan<5){
+      const noBaru = await sbAmbilNomor(inv.tanggal) || nomorBerikut(inv.tanggal);
+      // perbarui di memori & tampilan
+      const i = db.invoices.findIndex(x=>x.id===inv.id);
+      inv.no = noBaru;
+      if(i>=0) db.invoices[i].no = noBaru;
+      if(idAktif===inv.id && $('noInv')) $('noInv').value = noBaru;
+      catatNomor(noBaru, inv.tanggal);
+      await simpanDB();
+      info('Nomor bentrok dengan staff lain — otomatis diganti ke '+noBaru,'var(--navy)');
+      return sbDorongInvoice(inv, percobaan+1);
+    }
+    setSbStatus('Online, gagal kirim: '+pesan, true);
+  }
 }
 async function sbHapusInvoice(id){
   if(!sb) return;
