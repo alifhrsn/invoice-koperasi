@@ -264,26 +264,15 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 
     <div class="panel">
       <h2>Catatan & Cetak</h2>
-      <div class="baris">
-        <div style="max-width:150px">
-          <label for="statusBayar">Status Bayar</label>
-          <select id="statusBayar">
-            <option value="Belum">🔴 Belum Bayar</option>
-            <option value="Sebagian">🟡 Sebagian</option>
-            <option value="Lunas">🟢 Lunas</option>
-          </select>
-        </div>
-        <div>
-          <label for="catatan">Catatan (opsional)</label>
-          <input id="catatan" type="text" placeholder="cth: Pembayaran maks. 7 hari">
-        </div>
-      </div>
+      <label for="catatan">Catatan (opsional)</label>
+      <input id="catatan" type="text" placeholder="cth: Pembayaran maks. 7 hari">
       <div class="aksi">
         <button class="btn btn-hijau" id="btnSimpan">💾 Simpan</button>
         <button class="btn btn-biru" id="btnCetakPdf">🖨 Cetak / PDF</button>
         <button class="btn btn-biru" id="btnCetakDot">🖨 Cetak Dot Matrix</button>
         <button class="btn btn-abu" id="btnTxt">⬇ File .txt</button>
-        <button class="btn" id="btnWa" style="background:#25D366;color:#fff">📱 Kirim WhatsApp</button>
+        <button class="btn btn-abu" id="btnUnduhPdf">⬇ Download PDF</button>
+        <button class="btn" id="btnShare" style="background:#25D366;color:#fff">📤 Share (WhatsApp)</button>
       </div>
       <div class="status" id="status"></div>
       <div class="kecil" style="background:#FFF7E6;border:1px solid #F0D9A0;border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.6">
@@ -326,7 +315,6 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
           </tbody></table>
           <table class="meta"><tbody>
             <tr><td>Tuan / Toko</td><td>:</td><td style="font-weight:700" id="pPel"></td></tr>
-            <tr><td>Status</td><td>:</td><td id="pStatus"></td></tr>
           </tbody></table>
         </div>
         <table class="brg">
@@ -785,12 +773,6 @@ function renderPdf(tot){
   $('pNo').textContent = $('noInv').value || '—';
   $('pTgl').textContent = tglIndo($('tgl').value);
   $('pPel').textContent = ($('pelanggan').value||'—').toUpperCase();
-  if($('pStatus') && $('statusBayar')){
-    const st = $('statusBayar').value;
-    const warna = st==='Lunas'?'#1a7f3c':(st==='Sebagian'?'#b8860b':'#c0392b');
-    const label = st==='Lunas'?'LUNAS':(st==='Sebagian'?'DIBAYAR SEBAGIAN':'BELUM BAYAR');
-    $('pStatus').innerHTML = `<b style="color:${warna}">${label}</b>`;
-  }
   $('pAlamat').textContent = barisAlamat();
   const body = $('pBody');
   body.innerHTML = '';
@@ -933,36 +915,92 @@ $('btnTxt').addEventListener('click', ()=>{
   info('File .txt diunduh — kirim ke printer, contoh: copy /b file.txt LPT1');
 });
 
-// Kirim ringkasan invoice via WhatsApp
-function pesanWa(){
-  const rows = barisValid();
-  const tot = totalSemua();
-  const L = [];
-  L.push('*KOPERASI MITRA SANUR*');
-  L.push('INVOICE: '+($('noInv').value||'-'));
-  L.push('Tanggal: '+tglIndo($('tgl').value));
-  L.push('Kepada: '+($('pelanggan').value||'-'));
-  L.push('');
-  rows.forEach((it,i)=>{
-    L.push(`${i+1}. ${it.name} — ${fmtQty(it.qty)} ${it.unit} x ${rupiah(+it.price||0)} = ${rupiah(subtotal(it))}`);
+// ====== BUAT & BAGIKAN PDF INVOICE ======
+// Muat library pembuat PDF (jsPDF + html2canvas) sekali saat dibutuhkan
+let _pdfLibs = null;
+function muatSkrip(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('gagal memuat '+src));
+    document.head.appendChild(s);
   });
-  L.push('');
-  L.push('*TOTAL: '+rupiah(tot)+'*');
-  L.push('Terbilang: '+terbilang(tot));
-  const st=$('statusBayar').value;
-  L.push('Status: '+(st==='Lunas'?'✅ LUNAS':(st==='Sebagian'?'🟡 Dibayar sebagian':'🔴 Belum bayar')));
-  const b=$('bank').value.trim(), an=$('an').value.trim(), rek=$('rek').value.trim();
-  if(rek){ L.push(''); L.push('Pembayaran: Bank '+b+' a/n '+an); L.push('No. Rek: '+rek); }
-  const cat=$('catatan').value.trim();
-  if(cat){ L.push(''); L.push('Catatan: '+cat); }
-  return L.join('\n');
 }
-$('btnWa').addEventListener('click', async ()=>{
-  if(barisValid().length===0){ info('Belum ada barang untuk dikirim.','var(--merah)'); return; }
-  await simpanInvoice(true);   // simpan dulu
-  const teks = encodeURIComponent(pesanWa());
-  window.open('https://wa.me/?text='+teks, '_blank');
-  info('WhatsApp dibuka — pilih kontak dapur untuk mengirim.');
+async function siapkanPdfLibs(){
+  if(_pdfLibs) return _pdfLibs;
+  if(!window.jspdf) await muatSkrip('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  if(!window.html2canvas) await muatSkrip('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  _pdfLibs = { jsPDF: window.jspdf.jsPDF, html2canvas: window.html2canvas };
+  return _pdfLibs;
+}
+// hasilkan Blob PDF dari lembar preview A4
+async function buatPdfBlob(){
+  const { jsPDF, html2canvas } = await siapkanPdfLibs();
+  setMode('pdf');                     // pastikan mode A4 aktif
+  aturUkuranHalaman('pdf');
+  const lembar = $('lembarPdf');
+  const minH = lembar.style.minHeight;
+  lembar.style.minHeight = 'auto';    // capture pas setinggi konten (buang ruang kosong A4)
+  await new Promise(r=>setTimeout(r,60));
+  const kanvas = await html2canvas(lembar, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+  lembar.style.minHeight = minH;      // kembalikan tampilan preview
+  const wmm = 210, hmm = kanvas.height * wmm / kanvas.width;
+  const img = kanvas.toDataURL('image/jpeg', 0.92);
+  const pageH = 297;   // tinggi A4
+  if(hmm <= pageH + 2){
+    // muat 1 halaman: buat halaman setinggi konten (hindari halaman kedua kosong)
+    const pdf = new jsPDF({unit:'mm', format:[wmm, Math.max(hmm, 60)], orientation:'portrait'});
+    pdf.addImage(img, 'JPEG', 0, 0, wmm, hmm);
+    return pdf.output('blob');
+  }
+  // konten lebih dari 1 halaman -> A4 multi-halaman
+  const pdf = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
+  let sisa = hmm, posisi = 0;
+  while(sisa > 0){
+    pdf.addImage(img, 'JPEG', 0, -posisi, wmm, hmm);
+    sisa -= pageH; posisi += pageH;
+    if(sisa > 0) pdf.addPage();
+  }
+  return pdf.output('blob');
+}
+function namaFilePdf(){
+  return ($('noInv').value||'invoice').replace(/[\/\\:]/g,'-')+'.pdf';
+}
+// tombol Download PDF
+$('btnUnduhPdf').addEventListener('click', async ()=>{
+  if(barisValid().length===0){ info('Belum ada barang.','var(--merah)'); return; }
+  info('Menyiapkan PDF…','var(--navy)');
+  try{
+    await simpanInvoice(true);
+    const blob = await buatPdfBlob();
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=namaFilePdf();
+    a.click(); URL.revokeObjectURL(a.href);
+    info('PDF diunduh ✓');
+  }catch(e){ info('Gagal membuat PDF: '+(e.message||e),'var(--merah)'); }
+});
+// tombol Share (WhatsApp/Email/dll via menu berbagi HP) — melampirkan PDF
+$('btnShare').addEventListener('click', async ()=>{
+  if(barisValid().length===0){ info('Belum ada barang.','var(--merah)'); return; }
+  info('Menyiapkan PDF untuk dibagikan…','var(--navy)');
+  try{
+    await simpanInvoice(true);
+    const blob = await buatPdfBlob();
+    const file = new File([blob], namaFilePdf(), {type:'application/pdf'});
+    const judul = 'Invoice '+($('noInv').value||'')+' — '+($('pelanggan').value||'');
+    // Web Share API dengan file (didukung Android Chrome, Safari iOS, dll)
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:judul, text:judul});
+      info('Terbagikan ✓');
+    }else{
+      // fallback: unduh PDF + buka WhatsApp berisi teks (user lampirkan manual)
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=namaFilePdf();
+      a.click(); URL.revokeObjectURL(a.href);
+      const teks = encodeURIComponent(judul+'\n(PDF sudah terunduh — lampirkan file ke chat)');
+      window.open('https://wa.me/?text='+teks, '_blank');
+      info('Perangkat ini belum mendukung berbagi file langsung — PDF diunduh, WhatsApp dibuka. Lampirkan PDF-nya.','var(--navy)');
+    }
+  }catch(e){
+    if((e.name||'')==='AbortError'){ info('Dibatalkan.'); }
+    else info('Gagal berbagi: '+(e.message||e),'var(--merah)');
+  }
 });
 
 /* ================== SIMPAN & RIWAYAT ================== */
@@ -981,7 +1019,6 @@ function ambilForm(){
     bank: {bank:$('bank').value.trim(), an:$('an').value.trim(), rek:$('rek').value.trim()},
     ttdNama: $('ttdNama').value.trim(),
     catatan: $('catatan').value.trim(),
-    status: (inv0 && inv0.status) ? inv0.status : ($('statusBayar') ? $('statusBayar').value : 'Belum'),
     dibuat: (inv0 && inv0.dibuat) ? inv0.dibuat : new Date().toISOString(),  // waktu pembuatan (tetap)
     diubah: new Date().toISOString()
   };
@@ -1058,35 +1095,15 @@ function renderRiwayat(){
   db.invoices.forEach(inv=>{
     const el=document.createElement('div');
     el.className='item-riwayat';
-    const st = inv.status||'Belum';
-    const warna = st==='Lunas'?'#1a7f3c':(st==='Sebagian'?'#b8860b':'#c0392b');
-    const emo = st==='Lunas'?'🟢':(st==='Sebagian'?'🟡':'🔴');
     el.innerHTML=`<div class="info"><b class="nom">${esc(inv.no)}</b>
       <span>${tglIndo(inv.tanggal)} · ${esc(inv.pelanggan||'-')} · ${inv.items.length} barang</span>
-      <span style="font-weight:700;color:var(--tinta)">${rupiah(inv.total)} &nbsp; <span style="color:${warna};font-weight:700">${emo} ${st}</span></span></div>
-      <select data-status="${inv.id}" title="Ubah status bayar" style="max-width:120px">
-        <option value="Belum"${st==='Belum'?' selected':''}>🔴 Belum</option>
-        <option value="Sebagian"${st==='Sebagian'?' selected':''}>🟡 Sebagian</option>
-        <option value="Lunas"${st==='Lunas'?' selected':''}>🟢 Lunas</option>
-      </select>
+      <span style="font-weight:700;color:var(--tinta)">${rupiah(inv.total)}</span></div>
       <button class="btn btn-biru" data-buka="${inv.id}">Buka</button>
       <button class="btn btn-abu" data-salin="${inv.id}">Duplikat</button>
       <button class="btn btn-bahaya" data-hapus="${inv.id}">Hapus</button>`;
     wadah.appendChild(el);
   });
 }
-// ganti status cepat dari riwayat
-$('isiRiwayat').addEventListener('change', async e=>{
-  const id=e.target.dataset.status;
-  if(!id) return;
-  const inv=db.invoices.find(x=>x.id===id);
-  if(inv){
-    inv.status=e.target.value; inv.diubah=new Date().toISOString();
-    await simpanDB(); sbDorongInvoice(inv); renderRiwayat();
-    if(idAktif===id && $('statusBayar')){ $('statusBayar').value=inv.status; perbarui(); }
-    info('Status '+inv.no+' → '+inv.status);
-  }
-});
 $('isiRiwayat').addEventListener('click', async e=>{
   const b=e.target.dataset;
   if(b.buka){
@@ -1225,10 +1242,6 @@ function hitungDashboard(periode){
   let inv = db.invoices.slice();
   if(periode && periode!=='_semua') inv = inv.filter(x=>(x.tanggal||'').slice(0,7)===periode);
   const total = inv.reduce((s,x)=>s+(+x.total||0),0);
-  // per status
-  const st = {Lunas:0, Sebagian:0, Belum:0};
-  const stNilai = {Lunas:0, Sebagian:0, Belum:0};
-  inv.forEach(x=>{ const s=x.status||'Belum'; if(st[s]===undefined){st[s]=0;stNilai[s]=0;} st[s]++; stNilai[s]+=(+x.total||0); });
   // per dapur
   const dapur={};
   inv.forEach(x=>{ const d=(x.pelanggan||'(tanpa nama)').trim()||'(tanpa nama)';
@@ -1240,7 +1253,7 @@ function hitungDashboard(periode){
     const k=nm.toLowerCase(); if(!brg[k])brg[k]={nama:nm,unit:it.unit||'',qty:0,nilai:0};
     brg[k].qty+=parseFloat(it.qty)||0; brg[k].nilai+=Math.round((parseFloat(it.qty)||0)*(+it.price||0)); }));
   const brgArr=Object.values(brg).sort((a,b)=>b.nilai-a.nilai).slice(0,10);
-  return {inv, total, st, stNilai, dapurArr, brgArr};
+  return {inv, total, dapurArr, brgArr};
 }
 function kartu(judul, nilai, warna, sub){
   return `<div style="flex:1;min-width:130px;background:#fff;border:1px solid var(--garis);border-radius:10px;padding:12px 14px">
@@ -1255,23 +1268,13 @@ function renderDashboard(){
   if(d.inv.length===0){ wadah.innerHTML='<div class="kosong">Belum ada invoice pada periode ini.</div>'; return; }
   let h='';
   // kartu ringkasan
+  const rata = d.inv.length ? Math.round(d.total/d.inv.length) : 0;
   h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
     ${kartu('Total Invoice', d.inv.length, 'var(--navy)')}
     ${kartu('Total Penjualan', rupiah(d.total), 'var(--navy)')}
-    ${kartu('🟢 Lunas', rupiah(d.stNilai.Lunas), '#1a7f3c', d.st.Lunas+' invoice')}
-    ${kartu('🟡 Sebagian', rupiah(d.stNilai.Sebagian), '#b8860b', d.st.Sebagian+' invoice')}
-    ${kartu('🔴 Belum Bayar', rupiah(d.stNilai.Belum), '#c0392b', d.st.Belum+' invoice')}
+    ${kartu('Rata-rata / Invoice', rupiah(rata), 'var(--navy)')}
+    ${kartu('Jumlah Dapur', d.dapurArr.length, 'var(--navy)')}
   </div>`;
-  // bar status (visual)
-  const totNilai=d.total||1;
-  const pL=Math.round(d.stNilai.Lunas/totNilai*100), pS=Math.round(d.stNilai.Sebagian/totNilai*100), pB=100-pL-pS;
-  h+=`<div class="panel" style="margin-bottom:12px"><h2>Proporsi Pembayaran (nilai)</h2>
-    <div style="display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--garis)">
-      <div style="width:${pL}%;background:#2fa84f" title="Lunas"></div>
-      <div style="width:${pS}%;background:#e0b020" title="Sebagian"></div>
-      <div style="width:${pB}%;background:#d0524a" title="Belum"></div>
-    </div>
-    <div class="kecil" style="margin-top:6px">🟢 Lunas ${pL}% &nbsp; 🟡 Sebagian ${pS}% &nbsp; 🔴 Belum ${pB}%</div></div>`;
   // per dapur
   h+=`<div class="panel" style="margin-bottom:12px"><h2>Penjualan per Dapur</h2>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1308,7 +1311,6 @@ function isiForm(inv, nomorBaru){
   $('rek').value = inv.bank?.rek||'';
   $('ttdNama').value = inv.ttdNama||'';
   $('catatan').value = inv.catatan||'';
-  if($('statusBayar')) $('statusBayar').value = inv.status || 'Belum';
   $('pilihRek').value = '';
   items = inv.items.map(x=>({qty:String(x.qty),unit:x.unit,name:x.name,price:x.price}));
   if(items.length===0) items.push({qty:'',unit:'',name:'',price:''});
@@ -1327,7 +1329,6 @@ function formBaru(){
   $('rek').value = rt.rek||'';
   $('ttdNama').value = 'Admin';   // default selalu Admin (dengan ttd & cap otomatis)
   $('catatan').value = '';
-  if($('statusBayar')) $('statusBayar').value = 'Belum';
   $('pilihRek').value = '';
   items = [{qty:'',unit:'',name:'',price:''}];
   renderBarang();
@@ -1339,7 +1340,6 @@ $('tgl').addEventListener('change', ()=>{
   perbarui();
 });
 ['noInv','pelanggan','bank','an','rek','catatan','ttdNama'].forEach(id=> $(id).addEventListener('input', perbarui));
-$('statusBayar').addEventListener('change', perbarui);
 // saat dapur (pelanggan) berganti, perbarui harga suggest
 $('pelanggan').addEventListener('input', isiDatalistBarang);
 $('pelanggan').addEventListener('change', isiDatalistBarang);
