@@ -264,8 +264,21 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 
     <div class="panel">
       <h2>Catatan & Cetak</h2>
-      <label for="catatan">Catatan (opsional)</label>
-      <input id="catatan" type="text" placeholder="cth: Pembayaran maks. 7 hari">
+      <div class="baris">
+        <div style="max-width:170px">
+          <label for="statusBayar">Status Bayar <span class="kecil" style="font-weight:400">(internal)</span></label>
+          <select id="statusBayar">
+            <option value="Belum">🔴 Belum Bayar</option>
+            <option value="Sebagian">🟡 Sebagian</option>
+            <option value="Lunas">🟢 Lunas</option>
+          </select>
+        </div>
+        <div>
+          <label for="catatan">Catatan (opsional)</label>
+          <input id="catatan" type="text" placeholder="cth: Pembayaran maks. 7 hari">
+        </div>
+      </div>
+      <div class="kecil" style="color:var(--abu);margin:-2px 0 8px">Status bayar untuk pemantauan koperasi — tidak ikut tercetak di invoice.</div>
       <div class="aksi">
         <button class="btn btn-hijau" id="btnSimpan">💾 Simpan</button>
         <button class="btn btn-biru" id="btnCetakPdf">🖨 Cetak / PDF</button>
@@ -1021,7 +1034,7 @@ function ambilForm(){
     bank: {bank:$('bank').value.trim(), an:$('an').value.trim(), rek:$('rek').value.trim()},
     ttdNama: $('ttdNama').value.trim(),
     catatan: $('catatan').value.trim(),
-    status: (inv0 && inv0.status) ? inv0.status : 'Belum',   // status bayar INTERNAL (tidak tampil di invoice)
+    status: $('statusBayar') ? $('statusBayar').value : ((inv0 && inv0.status) ? inv0.status : 'Belum'),   // status bayar INTERNAL (tidak tampil di invoice)
     dibuat: (inv0 && inv0.dibuat) ? inv0.dibuat : new Date().toISOString(),  // waktu pembuatan (tetap)
     diubah: new Date().toISOString()
   };
@@ -1123,6 +1136,7 @@ $('isiRiwayat').addEventListener('change', async e=>{
   if(inv){
     inv.status=e.target.value; inv.diubah=new Date().toISOString();
     await simpanDB(); sbDorongInvoice(inv); renderRiwayat();
+    if(idAktif===id && $('statusBayar')) $('statusBayar').value=inv.status;  // sinkron ke form utama
     info('Status '+inv.no+' → '+inv.status);
   }
 });
@@ -1357,6 +1371,7 @@ function isiForm(inv, nomorBaru){
   $('rek').value = inv.bank?.rek||'';
   $('ttdNama').value = inv.ttdNama||'';
   $('catatan').value = inv.catatan||'';
+  if($('statusBayar')) $('statusBayar').value = inv.status || 'Belum';
   $('pilihRek').value = '';
   items = inv.items.map(x=>({qty:String(x.qty),unit:x.unit,name:x.name,price:x.price}));
   if(items.length===0) items.push({qty:'',unit:'',name:'',price:''});
@@ -1375,6 +1390,7 @@ function formBaru(){
   $('rek').value = rt.rek||'';
   $('ttdNama').value = 'Admin';   // default selalu Admin (dengan ttd & cap otomatis)
   $('catatan').value = '';
+  if($('statusBayar')) $('statusBayar').value = 'Belum';
   $('pilihRek').value = '';
   items = [{qty:'',unit:'',name:'',price:''}];
   renderBarang();
@@ -1386,6 +1402,18 @@ $('tgl').addEventListener('change', ()=>{
   perbarui();
 });
 ['noInv','pelanggan','bank','an','rek','catatan','ttdNama'].forEach(id=> $(id).addEventListener('input', perbarui));
+// ubah status dari form utama: langsung tersimpan bila invoice sudah ada
+$('statusBayar').addEventListener('change', async ()=>{
+  if(idAktif){
+    const inv=db.invoices.find(x=>x.id===idAktif);
+    if(inv){
+      inv.status=$('statusBayar').value; inv.diubah=new Date().toISOString();
+      await simpanDB(); sbDorongInvoice(inv);
+      if($('dlgRiwayat')?.open) renderRiwayat();
+      info('Status → '+inv.status);
+    }
+  }
+});
 // saat dapur (pelanggan) berganti, perbarui harga suggest
 $('pelanggan').addEventListener('input', isiDatalistBarang);
 $('pelanggan').addEventListener('change', isiDatalistBarang);
