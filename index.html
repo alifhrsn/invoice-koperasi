@@ -280,7 +280,9 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
         • <b>Cetak / PDF</b> → Ukuran kertas <b>A4</b>, Orientasi <b>Portrait / Tegak</b> (muat lebih banyak item)<br>
         • <b>Cetak Dot Matrix</b> → Ukuran <b>A5</b> (atau custom 21 × 14,8 cm), Orientasi <b>Landscape / Mendatar</b><br>
         • Margins: <b>None / Tanpa margin</b> · Scale: <b>100</b> (jangan "Fit to page")<br>
-        • Buka <b>More settings</b> lalu centang <b>Background graphics</b> agar garis &amp; warna tabel ikut tercetak.
+        • Buka <b>More settings</b> lalu <b>hilangkan centang "Headers and footers"</b> agar URL, tanggal, & "Page 1 of 1" tidak ikut tercetak.<br>
+        • Centang <b>Background graphics</b> agar garis &amp; warna tabel ikut tercetak.<br>
+        <b>💡 Tips:</b> Pakai tombol <b>⬇ Download PDF</b> untuk hasil paling bersih — otomatis tanpa header/footer browser.
       </div>
     </div>
   </div>
@@ -1019,6 +1021,7 @@ function ambilForm(){
     bank: {bank:$('bank').value.trim(), an:$('an').value.trim(), rek:$('rek').value.trim()},
     ttdNama: $('ttdNama').value.trim(),
     catatan: $('catatan').value.trim(),
+    status: (inv0 && inv0.status) ? inv0.status : 'Belum',   // status bayar INTERNAL (tidak tampil di invoice)
     dibuat: (inv0 && inv0.dibuat) ? inv0.dibuat : new Date().toISOString(),  // waktu pembuatan (tetap)
     diubah: new Date().toISOString()
   };
@@ -1095,15 +1098,34 @@ function renderRiwayat(){
   db.invoices.forEach(inv=>{
     const el=document.createElement('div');
     el.className='item-riwayat';
+    const st = inv.status||'Belum';
+    const warna = st==='Lunas'?'#1a7f3c':(st==='Sebagian'?'#b8860b':'#c0392b');
+    const emo = st==='Lunas'?'🟢':(st==='Sebagian'?'🟡':'🔴');
     el.innerHTML=`<div class="info"><b class="nom">${esc(inv.no)}</b>
       <span>${tglIndo(inv.tanggal)} · ${esc(inv.pelanggan||'-')} · ${inv.items.length} barang</span>
-      <span style="font-weight:700;color:var(--tinta)">${rupiah(inv.total)}</span></div>
+      <span style="font-weight:700;color:var(--tinta)">${rupiah(inv.total)} &nbsp; <span style="color:${warna};font-weight:700">${emo} ${st}</span></span></div>
+      <select data-status="${inv.id}" title="Status bayar (internal, tidak tampil di invoice)" style="max-width:120px">
+        <option value="Belum"${st==='Belum'?' selected':''}>🔴 Belum</option>
+        <option value="Sebagian"${st==='Sebagian'?' selected':''}>🟡 Sebagian</option>
+        <option value="Lunas"${st==='Lunas'?' selected':''}>🟢 Lunas</option>
+      </select>
       <button class="btn btn-biru" data-buka="${inv.id}">Buka</button>
       <button class="btn btn-abu" data-salin="${inv.id}">Duplikat</button>
       <button class="btn btn-bahaya" data-hapus="${inv.id}">Hapus</button>`;
     wadah.appendChild(el);
   });
 }
+// ubah status bayar cepat dari riwayat (internal — tidak memengaruhi tampilan invoice)
+$('isiRiwayat').addEventListener('change', async e=>{
+  const id=e.target.dataset.status;
+  if(!id) return;
+  const inv=db.invoices.find(x=>x.id===id);
+  if(inv){
+    inv.status=e.target.value; inv.diubah=new Date().toISOString();
+    await simpanDB(); sbDorongInvoice(inv); renderRiwayat();
+    info('Status '+inv.no+' → '+inv.status);
+  }
+});
 $('isiRiwayat').addEventListener('click', async e=>{
   const b=e.target.dataset;
   if(b.buka){
@@ -1169,10 +1191,15 @@ function renderRekap(){
   // daftar invoice
   h+=`<div class="panel" style="margin-bottom:12px"><h2>Daftar Invoice</h2>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
-    <tr style="text-align:left;color:var(--abu)"><th style="padding:4px">No</th><th>Tanggal</th><th style="text-align:right">Total</th></tr>`;
-  inv.forEach(x=>{ h+=`<tr style="border-top:1px solid var(--garis)">
+    <tr style="text-align:left;color:var(--abu)"><th style="padding:4px">No</th><th>Tanggal</th><th>Status</th><th style="text-align:right">Total</th></tr>`;
+  inv.forEach(x=>{
+    const st=x.status||'Belum';
+    const warna = st==='Lunas'?'#1a7f3c':(st==='Sebagian'?'#b8860b':'#c0392b');
+    const emo = st==='Lunas'?'🟢':(st==='Sebagian'?'🟡':'🔴');
+    h+=`<tr style="border-top:1px solid var(--garis)">
     <td style="padding:4px;font-family:var(--font-mono)">${esc(x.no)}</td>
     <td>${tglIndo(x.tanggal)}</td>
+    <td style="color:${warna};font-weight:600">${emo} ${st}</td>
     <td style="text-align:right;font-variant-numeric:tabular-nums">${rupiah(+x.total||0)}</td></tr>`; });
   h+=`</table></div>`;
   // rekap barang
@@ -1242,6 +1269,9 @@ function hitungDashboard(periode){
   let inv = db.invoices.slice();
   if(periode && periode!=='_semua') inv = inv.filter(x=>(x.tanggal||'').slice(0,7)===periode);
   const total = inv.reduce((s,x)=>s+(+x.total||0),0);
+  // ringkasan status bayar (internal)
+  const st={Lunas:0,Sebagian:0,Belum:0}, stNilai={Lunas:0,Sebagian:0,Belum:0};
+  inv.forEach(x=>{ const s=x.status||'Belum'; if(st[s]===undefined){st[s]=0;stNilai[s]=0;} st[s]++; stNilai[s]+=(+x.total||0); });
   // per dapur
   const dapur={};
   inv.forEach(x=>{ const d=(x.pelanggan||'(tanpa nama)').trim()||'(tanpa nama)';
@@ -1253,7 +1283,7 @@ function hitungDashboard(periode){
     const k=nm.toLowerCase(); if(!brg[k])brg[k]={nama:nm,unit:it.unit||'',qty:0,nilai:0};
     brg[k].qty+=parseFloat(it.qty)||0; brg[k].nilai+=Math.round((parseFloat(it.qty)||0)*(+it.price||0)); }));
   const brgArr=Object.values(brg).sort((a,b)=>b.nilai-a.nilai).slice(0,10);
-  return {inv, total, dapurArr, brgArr};
+  return {inv, total, st, stNilai, dapurArr, brgArr};
 }
 function kartu(judul, nilai, warna, sub){
   return `<div style="flex:1;min-width:130px;background:#fff;border:1px solid var(--garis);border-radius:10px;padding:12px 14px">
@@ -1275,6 +1305,22 @@ function renderDashboard(){
     ${kartu('Rata-rata / Invoice', rupiah(rata), 'var(--navy)')}
     ${kartu('Jumlah Dapur', d.dapurArr.length, 'var(--navy)')}
   </div>`;
+  // ringkasan pembayaran (internal)
+  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    ${kartu('🟢 Lunas', rupiah(d.stNilai.Lunas), '#1a7f3c', d.st.Lunas+' invoice')}
+    ${kartu('🟡 Sebagian', rupiah(d.stNilai.Sebagian), '#b8860b', d.st.Sebagian+' invoice')}
+    ${kartu('🔴 Belum Bayar', rupiah(d.stNilai.Belum), '#c0392b', d.st.Belum+' invoice')}
+  </div>`;
+  // bar proporsi pembayaran
+  const totNilai=d.total||1;
+  const pL=Math.round(d.stNilai.Lunas/totNilai*100), pS=Math.round(d.stNilai.Sebagian/totNilai*100), pB=100-pL-pS;
+  h+=`<div class="panel" style="margin-bottom:12px"><h2>Proporsi Pembayaran (nilai)</h2>
+    <div style="display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--garis)">
+      <div style="width:${pL}%;background:#2fa84f"></div>
+      <div style="width:${pS}%;background:#e0b020"></div>
+      <div style="width:${pB}%;background:#d0524a"></div>
+    </div>
+    <div class="kecil" style="margin-top:6px">🟢 Lunas ${pL}% &nbsp; 🟡 Sebagian ${pS}% &nbsp; 🔴 Belum ${pB}%</div></div>`;
   // per dapur
   h+=`<div class="panel" style="margin-bottom:12px"><h2>Penjualan per Dapur</h2>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
