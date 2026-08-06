@@ -48,6 +48,7 @@ body{font-family:var(--font-ui);background:var(--latar);color:var(--tinta);font-
 .auth-card .auth-error{min-height:18px;color:var(--merah);font-size:12px;margin-top:9px}
 .auth-card [hidden]{display:none !important}
 .auth-user{font-size:11.5px;background:rgba(255,255,255,.14);padding:6px 10px;border-radius:99px;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.staf-online{font-size:11.5px;background:rgba(47,168,79,.22);border:1px solid rgba(137,235,164,.45);padding:6px 10px;border-radius:99px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ===== TATA LETAK ===== */
 .wrap{display:grid;grid-template-columns:420px 1fr;gap:18px;padding:18px;max-width:1500px;margin:0 auto}
@@ -201,6 +202,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
     <span>Koperasi Mitra Sanur · Kertas A4 dibagi 2 (210 × 148,5 mm)</span>
   </div>
   <div class="spacer"></div>
+  <span class="staf-online" id="stafOnline" hidden></span>
   <span class="auth-user" id="authUser" hidden></span>
   <span id="sbStatus" style="font-size:11.5px;background:rgba(255,255,255,.14);padding:6px 12px;border-radius:99px"><span style="color:#9AA6B8">●</span> Offline — data lokal</span>
   <button class="btn btn-putih" id="btnBaru">+ Invoice Baru</button>
@@ -219,8 +221,8 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
       <div class="baris">
         <div>
           <label for="noInv">No. Invoice</label>
-          <input id="noInv" type="text">
-          <div class="kecil">Otomatis berurutan per bulan, boleh diubah.</div>
+          <input id="noInv" type="text" readonly title="Nomor final diberikan otomatis oleh server saat invoice disimpan">
+          <div class="kecil">Nomor final diberikan server saat disimpan untuk mencegah duplikat.</div>
         </div>
         <div style="max-width:150px">
           <label for="tgl">Tanggal</label>
@@ -1079,7 +1081,7 @@ function lewatBatasEdit(inv){
   return (Date.now() - new Date(inv.dibuat).getTime()) > BATAS_EDIT_MS;
 }
 async function simpanInvoice(diam){
-  const inv = ambilForm();
+  let inv = ambilForm();
   if(!inv.no){ if(!diam) info('Isi nomor invoice dulu.','var(--merah)'); return; }
   if(inv.items.length===0){ if(!diam) info('Belum ada barang.','var(--merah)'); return; }
   // peringatan edit setelah 48 jam
@@ -1092,28 +1094,32 @@ async function simpanInvoice(diam){
   }
   // cegah nomor kembar dengan invoice lain
   const invBaru = !db.invoices.some(x=>x.id===inv.id);
-  const nomorAuto = /^INV\/KMS\//.test(inv.no);
+  let tersimpanServer = false;
 
-  // PENOMORAN ATOMIK: untuk invoice BARU dengan nomor otomatis & sedang online,
-  // ambil nomor dari server (anti-duplikat walau banyak staff bersamaan)
-  if(invBaru && nomorAuto && sb){
-    const noServer = await sbAmbilNomor(inv.tanggal);
-    if(noServer){ inv.no = noServer; if($('noInv')) $('noInv').value = noServer; }
+  // Server memberi nomor dan menulis invoice baru dalam satu transaksi atomik.
+  if(invBaru){
+    if(!sb){
+      if(!diam) info('Invoice baru harus disimpan saat online agar nomor tidak duplikat.','var(--merah)');
+      return;
+    }
+    const tombol=$('btnSimpan');
+    tombol.disabled=true; tombol.textContent='Menyimpan…';
+    try{
+      inv = await sbSimpanInvoiceBaru(inv);
+      tersimpanServer = true;
+      $('noInv').value = inv.no;
+    }catch(e){
+      if(!diam) info('Gagal menyimpan ke server: '+(e.message||e),'var(--merah)');
+      return;
+    }finally{
+      tombol.disabled=false; tombol.textContent='💾 Simpan';
+    }
   }
 
   const kembar = db.invoices.find(x=>x.no===inv.no && x.id!==inv.id);
   if(kembar){
-    if(invBaru && nomorAuto){
-      // fallback bila offline / RPC gagal: naikkan lokal ke nomor bebas berikutnya
-      const noBaru = nomorBerikut(inv.tanggal);
-      inv.no = noBaru;
-      if($('noInv')) $('noInv').value = noBaru;
-      if(!diam) info('Nomor bentrok terdeteksi — otomatis diganti ke '+noBaru,'var(--navy)');
-    }else if(!diam){
-      const lanjut = confirm('Nomor '+inv.no+' sudah dipakai invoice lain ('+
-        (kembar.pelanggan||'-')+', '+tglIndo(kembar.tanggal)+').\nTetap simpan dengan nomor yang sama?');
-      if(!lanjut){ info('Batal — silakan ganti nomor invoice.','var(--merah)'); return; }
-    }
+    if(!diam) info('Nomor '+inv.no+' sudah dipakai invoice lain. Penyimpanan dibatalkan.','var(--merah)');
+    return;
   }
   const idx = db.invoices.findIndex(x=>x.id===inv.id);
   if(idx>=0) db.invoices[idx]=inv; else db.invoices.unshift(inv);
@@ -1131,8 +1137,9 @@ async function simpanInvoice(diam){
   });
   await simpanDB();
   isiDatalistPelanggan();
-  sbDorongInvoice(inv);       // sinkron online (bila terhubung)
+  if(!tersimpanServer) sbDorongInvoice(inv); // invoice baru sudah ditulis atomik oleh RPC
   sbDorongPengaturan();
+  sbPerbaruiPresence();
   if(!diam) info(storageOk ? 'Invoice tersimpan ✓' : 'Tersimpan sementara (penyimpanan gagal).', storageOk?null:'var(--merah)');
 }
 $('btnSimpan').addEventListener('click', ()=>simpanInvoice(false));
@@ -1410,6 +1417,7 @@ function isiForm(inv, nomorBaru){
   items = inv.items.map(x=>({qty:String(x.qty),unit:x.unit,name:x.name,price:x.price}));
   if(items.length===0) items.push({qty:'',unit:'',name:'',price:''});
   renderBarang();
+  sbPerbaruiPresence();
 }
 function hariIni(){ const d=new Date(); return d.toISOString().slice(0,10); }
 function formBaru(){
@@ -1428,6 +1436,7 @@ function formBaru(){
   $('pilihRek').value = '';
   items = [{qty:'',unit:'',name:'',price:''}];
   renderBarang();
+  sbPerbaruiPresence();
 }
 $('btnBaru').addEventListener('click', ()=>{ formBaru(); info('Form baru siap.'); });
 $('tgl').addEventListener('change', ()=>{
@@ -1708,6 +1717,76 @@ end; $$;
 revoke all on function public.ambil_nomor(text) from public, anon, authenticated;
 grant execute on function public.ambil_nomor(text) to authenticated;
 
+create or replace function public.buat_invoice_baru(p_invoice jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_id text;
+  v_tanggal date;
+  v_prefix text;
+  v_nomor text;
+  v_data jsonb;
+  v_existing jsonb;
+  v_urut int;
+  v_attempt int;
+begin
+  if not (select private.is_invoice_staff()) then
+    raise exception 'Akses ditolak' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_invoice) <> 'object' then
+    raise exception 'Data invoice tidak valid' using errcode = '22023';
+  end if;
+  v_id := nullif(trim(p_invoice->>'id'), '');
+  if v_id is null then
+    raise exception 'ID invoice wajib diisi' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.invoice_deletions d where d.id=v_id) then
+    raise exception 'Invoice ini sudah dihapus' using errcode = '23505';
+  end if;
+  v_tanggal := nullif(p_invoice->>'tanggal','')::date;
+  if v_tanggal is null then
+    raise exception 'Tanggal invoice wajib diisi' using errcode = '22023';
+  end if;
+  v_prefix := 'INV/KMS/' || to_char(v_tanggal,'YYYY/MM');
+
+  for v_attempt in 1..100 loop
+    insert into public.nomor_counter(prefix,terakhir)
+    values(v_prefix,1)
+    on conflict(prefix) do update
+      set terakhir=public.nomor_counter.terakhir+1
+    returning terakhir into v_urut;
+
+    v_nomor := v_prefix || '/' || lpad(v_urut::text,3,'0');
+    v_data := jsonb_set(p_invoice,'{no}',to_jsonb(v_nomor),true);
+    v_data := jsonb_set(v_data,'{diubah}',to_jsonb(now()),true);
+
+    begin
+      insert into public.invoices(id,no,tanggal,pelanggan,total,data,diubah)
+      values(
+        v_id,
+        v_nomor,
+        v_tanggal,
+        coalesce(v_data->>'pelanggan',''),
+        coalesce(nullif(v_data->>'total','')::bigint,0),
+        v_data,
+        (v_data->>'diubah')::timestamptz
+      );
+      return v_data;
+    exception when unique_violation then
+      select i.data into v_existing from public.invoices i where i.id=v_id;
+      if found then return v_existing; end if;
+    end;
+  end loop;
+
+  raise exception 'Nomor invoice tidak dapat dialokasikan' using errcode = '40001';
+end;
+$$;
+revoke all on function public.buat_invoice_baru(jsonb) from public, anon, authenticated;
+grant execute on function public.buat_invoice_baru(jsonb) to authenticated;
+
 -- 4) samakan counter dengan invoice yang sudah ada (jalankan sekali agar tidak mundur)
 insert into public.nomor_counter (prefix, terakhir)
 select substring(no from 1 for 15) as prefix, max(
@@ -1722,7 +1801,7 @@ $('btnSalinSql').addEventListener('click', async ()=>{
   setTimeout(()=>$('btnSalinSql').textContent='Salin SQL',3000);
 });
 
-let sb = null, sbKanal = null;
+let sb = null, sbKanal = null, sbUser = null;
 const USERNAME_EMAIL = Object.freeze({
   ajeng:'ajeng@staff.invoice-koperasi.id',
   nurul:'nurul@staff.invoice-koperasi.id',
@@ -1740,6 +1819,7 @@ function authPesan(pesan, sukses){
 function authKunci(pesan){
   $('authGate').hidden = false;
   $('authUser').hidden = true;
+  $('stafOnline').hidden = true;
   $('btnKeluar').hidden = true;
   authPesan(pesan || '');
   setTimeout(()=>$('authEmail')?.focus(), 0);
@@ -1793,10 +1873,11 @@ async function sbPastikanStaf(){
 }
 async function sbMulaiOnline(user){
   await sbPastikanStaf();
+  sbUser = user;
   authBuka(user);
   await sbTarik();
   await sbDorongSemua();
-  sbLangganan();
+  sbLangganan(user);
   setSbStatus('Online — tersinkron realtime', true);
 }
 $('formLogin').addEventListener('submit', async e=>{
@@ -1823,9 +1904,10 @@ $('formLogin').addEventListener('submit', async e=>{
   }
 });
 $('btnKeluar').addEventListener('click', async ()=>{
+  try{ if(sbKanal) await sbKanal.untrack(); }catch(e){}
   try{ if(sbKanal&&sb) await sb.removeChannel(sbKanal); }catch(e){}
   try{ if(sb) await sb.auth.signOut({scope:'local'}); }catch(e){}
-  sbKanal=null;
+  sbKanal=null; sbUser=null;
   setSbStatus('Keluar — login diperlukan', false);
   authKunci('Anda sudah keluar dengan aman.');
 });
@@ -1885,6 +1967,13 @@ async function sbTarik(){
   bangunDaftarDariInvoice();
   await simpanDB(); isiDatalistPelanggan(); perbarui();
 }
+async function sbSimpanInvoiceBaru(inv){
+  const {data, error} = await sb.rpc('buat_invoice_baru', {p_invoice:inv});
+  if(error) throw error;
+  if(!data?.id || !data?.no) throw new Error('Server tidak mengembalikan invoice yang valid');
+  return data;
+}
+// Kompatibilitas untuk tab versi lama; versi baru memakai buat_invoice_baru.
 // Ambil nomor invoice berikutnya secara ATOMIK dari server (anti-duplikat lintas staff).
 // Mengembalikan string nomor lengkap, atau null bila gagal (nanti fallback ke lokal).
 async function sbAmbilNomor(iso){
@@ -1914,29 +2003,20 @@ async function sbDorongSemua(){
     await sbDorongPengaturan();
   }catch(e){ setSbStatus('Online, sebagian gagal terkirim: '+(e.message||e), true); }
 }
-async function sbDorongInvoice(inv, percobaan){
+async function sbDorongInvoice(inv){
   if(!sb) return;
   if((db.hapusInvoiceIds||[]).includes(inv.id)) return;
-  percobaan = percobaan||0;
   try{
     const {error} = await sb.from('invoices').upsert(sbBaris(inv));
     if(error) throw error;
   }catch(e){
     const pesan = (e.message||e)+'';
-    // bentrok index unik nomor -> ada staff lain menyelak nomor yg sama.
-    // ambil nomor baru dari server & coba lagi (maks 5x).
     const bentrokNomor = /duplicate key|invoices_no_unik|unique/i.test(pesan);
-    if(bentrokNomor && /^INV\/KMS\//.test(inv.no) && percobaan<5){
-      const noBaru = await sbAmbilNomor(inv.tanggal) || nomorBerikut(inv.tanggal);
-      // perbarui di memori & tampilan
-      const i = db.invoices.findIndex(x=>x.id===inv.id);
-      inv.no = noBaru;
-      if(i>=0) db.invoices[i].no = noBaru;
-      if(idAktif===inv.id && $('noInv')) $('noInv').value = noBaru;
-      catatNomor(noBaru, inv.tanggal);
-      await simpanDB();
-      info('Nomor bentrok dengan staff lain — otomatis diganti ke '+noBaru,'var(--navy)');
-      return sbDorongInvoice(inv, percobaan+1);
+    if(bentrokNomor){
+      setSbStatus('Perubahan ditolak: nomor invoice sudah digunakan', false);
+      info('Nomor invoice sudah digunakan. Data server tidak diubah.','var(--merah)');
+      try{ await sbTarik(); }catch(err){}
+      return;
     }
     setSbStatus('Online, gagal kirim: '+pesan, true);
   }
@@ -1962,9 +2042,31 @@ async function sbDorongPengaturan(){
     await sb.from('pengaturan').upsert({id:1, data:{bank:db.bank, rekeningList:db.rekeningList, penandatanganList:db.penandatanganList, barangList:db.barangList, hargaPerDapur:db.hargaPerDapur, alamat:db.alamat, telp:db.telp, counter:db.counter}});
   }catch(e){}
 }
-function sbLangganan(){
-  try{ if(sbKanal) sb.removeChannel(sbKanal); }catch(e){}
-  sbKanal = sb.channel('perubahan-invoice')
+function renderStafOnline(){
+  const el=$('stafOnline');
+  if(!el || !sbKanal){ if(el) el.hidden=true; return; }
+  const semua=Object.values(sbKanal.presenceState()||{}).flat();
+  const dikenal=new Set(['Ajeng','Nurul','May']);
+  const orang=new Map();
+  semua.forEach(p=>{ if(dikenal.has(p.nama)) orang.set(p.nama,p); });
+  const daftar=[...orang.values()].sort((a,b)=>a.nama.localeCompare(b.nama,'id'));
+  if(!daftar.length){ el.hidden=true; return; }
+  const saya=namaDariUser(sbUser);
+  el.textContent='🟢 Online: '+daftar.map(p=>p.nama+(p.nama===saya?' (Anda)':'')).join(', ');
+  el.title=daftar.map(p=>`${p.nama}: ${p.aktivitas||'Membuka aplikasi'}`).join('\n');
+  el.hidden=false;
+}
+async function sbPerbaruiPresence(){
+  if(!sbKanal || !sbUser) return;
+  const nomor=($('noInv')?.value||'').trim();
+  const aktivitas=idAktif ? `Membuka ${nomor||'invoice'}` : 'Membuat invoice baru';
+  try{ await sbKanal.track({user_id:sbUser.id,nama:namaDariUser(sbUser),aktivitas,online_at:new Date().toISOString()}); }catch(e){}
+}
+function sbLangganan(user){
+  try{ if(sbKanal){ sbKanal.untrack(); sb.removeChannel(sbKanal); } }catch(e){}
+  const presenceKey=`${user.id}:${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
+  sbKanal = sb.channel('invoice-staf', {config:{presence:{key:presenceKey}}})
+    .on('presence', {event:'sync'}, renderStafOnline)
     .on('postgres_changes', {event:'*', schema:'public', table:'invoices'}, async m=>{
       if(m.eventType === 'DELETE'){
         if(m.old && m.old.id) db.invoices = db.invoices.filter(x=>x.id!==m.old.id);
@@ -1995,7 +2097,9 @@ function sbLangganan(){
       await simpanDB(); isiDatalistPelanggan();
       if($('dlgRiwayat').open) renderRiwayat();
     })
-    .subscribe();
+    .subscribe(async status=>{
+      if(status==='SUBSCRIBED') await sbPerbaruiPresence();
+    });
 }
 $('btnSbHubung').addEventListener('click', async ()=>{
   db.sb = {url:$('sbUrl').value.trim(), key:$('sbKey').value.trim()};
@@ -2010,8 +2114,9 @@ $('btnSbSync').addEventListener('click', async ()=>{
   catch(e){ setSbStatus('Gagal sinkron: '+(e.message||e), false); }
 });
 $('btnSbPutus').addEventListener('click', async ()=>{
+  try{ if(sbKanal) await sbKanal.untrack(); }catch(e){}
   try{ if(sbKanal&&sb) sb.removeChannel(sbKanal); }catch(e){}
-  sb=null; sbKanal=null;
+  sb=null; sbKanal=null; sbUser=null; $('stafOnline').hidden=true;
   db.sbMati = true;              // ditandai sengaja offline, agar tidak tersambung ulang saat dibuka lagi
   await simpanDB();
   setSbStatus('Offline — data lokal', false);

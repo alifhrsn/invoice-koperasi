@@ -172,6 +172,76 @@ $$;
 revoke all on function public.ambil_nomor(text) from public, anon, authenticated;
 grant execute on function public.ambil_nomor(text) to authenticated;
 
+create or replace function public.buat_invoice_baru(p_invoice jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_id text;
+  v_tanggal date;
+  v_prefix text;
+  v_nomor text;
+  v_data jsonb;
+  v_existing jsonb;
+  v_urut int;
+  v_attempt int;
+begin
+  if not (select private.is_invoice_staff()) then
+    raise exception 'Akses ditolak' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_invoice) <> 'object' then
+    raise exception 'Data invoice tidak valid' using errcode = '22023';
+  end if;
+  v_id := nullif(trim(p_invoice->>'id'), '');
+  if v_id is null then
+    raise exception 'ID invoice wajib diisi' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.invoice_deletions d where d.id=v_id) then
+    raise exception 'Invoice ini sudah dihapus' using errcode = '23505';
+  end if;
+  v_tanggal := nullif(p_invoice->>'tanggal','')::date;
+  if v_tanggal is null then
+    raise exception 'Tanggal invoice wajib diisi' using errcode = '22023';
+  end if;
+  v_prefix := 'INV/KMS/' || to_char(v_tanggal,'YYYY/MM');
+
+  for v_attempt in 1..100 loop
+    insert into public.nomor_counter(prefix,terakhir)
+    values(v_prefix,1)
+    on conflict(prefix) do update
+      set terakhir=public.nomor_counter.terakhir+1
+    returning terakhir into v_urut;
+
+    v_nomor := v_prefix || '/' || lpad(v_urut::text,3,'0');
+    v_data := jsonb_set(p_invoice,'{no}',to_jsonb(v_nomor),true);
+    v_data := jsonb_set(v_data,'{diubah}',to_jsonb(now()),true);
+
+    begin
+      insert into public.invoices(id,no,tanggal,pelanggan,total,data,diubah)
+      values(
+        v_id,
+        v_nomor,
+        v_tanggal,
+        coalesce(v_data->>'pelanggan',''),
+        coalesce(nullif(v_data->>'total','')::bigint,0),
+        v_data,
+        (v_data->>'diubah')::timestamptz
+      );
+      return v_data;
+    exception when unique_violation then
+      select i.data into v_existing from public.invoices i where i.id=v_id;
+      if found then return v_existing; end if;
+    end;
+  end loop;
+
+  raise exception 'Nomor invoice tidak dapat dialokasikan' using errcode = '40001';
+end;
+$$;
+revoke all on function public.buat_invoice_baru(jsonb) from public, anon, authenticated;
+grant execute on function public.buat_invoice_baru(jsonb) to authenticated;
+
 commit;
 
 -- Setelah Run:
