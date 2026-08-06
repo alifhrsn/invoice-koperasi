@@ -51,8 +51,9 @@ body{font-family:var(--font-ui);background:var(--latar);color:var(--tinta);font-
 .staf-online{font-size:11.5px;background:rgba(47,168,79,.22);border:1px solid rgba(137,235,164,.45);padding:6px 10px;border-radius:99px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ===== TATA LETAK ===== */
-.wrap{display:grid;grid-template-columns:420px 1fr;gap:18px;padding:18px;max-width:1500px;margin:0 auto}
-@media(max-width:1020px){.wrap{grid-template-columns:1fr}}
+.wrap{display:grid;grid-template-columns:minmax(360px,420px) minmax(0,1fr);gap:18px;padding:18px;max-width:1500px;margin:0 auto}
+.wrap>*{min-width:0}
+@media(max-width:1020px){.wrap{grid-template-columns:minmax(0,1fr)}}
 .panel{background:var(--kertas);border:1px solid var(--garis);border-radius:12px;padding:16px}
 .panel h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--abu);margin-bottom:12px;display:flex;align-items:center;gap:8px}
 .panel h2::after{content:'';flex:1;height:1px;background:var(--garis)}
@@ -82,11 +83,11 @@ table.tabel-input input{padding:7px 8px;font-size:13px}
 .mode-toggle{display:flex;background:#E6EBF3;border-radius:9px;padding:3px}
 .mode-toggle button{border:none;background:transparent;padding:7px 14px;border-radius:7px;font-weight:700;font-size:12.5px;cursor:pointer;color:var(--abu)}
 .mode-toggle button.aktif{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(16,24,40,.15)}
-.area-preview{display:flex;justify-content:center;background:#DDE4EF;border-radius:12px;padding:22px;overflow:auto}
+.area-preview{display:flex;justify-content:center;align-items:flex-start;background:#DDE4EF;border-radius:12px;padding:22px;overflow:auto;min-width:0}
 
 /* ===== LEMBAR ===== */
 /* Mode dot matrix: A5 landscape (A4 dibagi 2) = 210 x 148,5 mm */
-.lembar{background:#fff;box-shadow:0 6px 24px rgba(16,24,40,.22);position:relative;flex-shrink:0}
+.lembar{background:#fff;box-shadow:0 6px 24px rgba(16,24,40,.22);position:relative;flex-shrink:0;zoom:var(--preview-scale,1)}
 .lembar.dot{width:210mm;min-height:148.5mm}
 /* Mode printer/PDF: A4 portrait = 210 x 297 mm (muat lebih banyak item) */
 .lembar.pdf{width:210mm;min-height:297mm}
@@ -152,6 +153,61 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 .item-riwayat .nom{font-family:var(--font-mono);font-weight:600;color:var(--navy)}
 .kosong{text-align:center;color:var(--abu);padding:24px 0;font-size:13px}
 
+/* ===== RESPONSIF: TABLET & HP ===== */
+@media(max-width:760px){
+  .topbar{padding:10px;gap:8px}
+  .topbar img{height:38px}
+  .topbar .judul{flex:1;min-width:190px}
+  .topbar .judul span{display:none}
+  .topbar .spacer{display:none}
+  .staf-online,.auth-user,#sbStatus{max-width:100%;flex:1 1 auto;text-align:center}
+  .topbar>.btn{flex:1 1 calc(33.333% - 8px);min-height:42px;padding:8px 9px}
+  .wrap{padding:12px;gap:12px}
+  .panel{padding:14px}
+  .area-preview{padding:12px}
+  .preview-kepala{align-items:flex-start}
+  .preview-kepala h2{flex:1 1 100%}
+  .mode-toggle{width:100%}
+  .mode-toggle button{flex:1;min-height:40px;padding:7px 9px}
+  dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}
+  .dlg-isi{max-height:calc(100dvh - 78px)}
+}
+
+@media(max-width:560px){
+  body{font-size:13.5px}
+  .auth-gate{padding:12px}
+  .auth-card{padding:20px;border-radius:14px}
+  .topbar .judul b{font-size:14px}
+  .topbar>.btn{flex-basis:calc(50% - 5px);font-size:12px}
+  .wrap{padding:8px;gap:8px}
+  .panel{padding:12px;border-radius:10px}
+  .baris{flex-direction:column;gap:8px}
+  .baris>div[style]{max-width:none !important}
+  input,select,textarea{min-height:44px;font-size:16px}
+  .aksi{gap:7px}
+  .aksi .btn{flex:1 1 calc(50% - 4px);min-height:44px;padding:8px;font-size:12px}
+  .total-form{padding:10px}
+  .total-form b{font-size:15px}
+  table.tabel-input,table.tabel-input tbody{display:block;width:100%}
+  table.tabel-input thead{display:none}
+  table.tabel-input tr{position:relative;display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:7px;background:#F8FAFD;border:1px solid var(--garis);border-radius:10px;padding:10px;margin-bottom:9px}
+  table.tabel-input td{display:flex;flex-direction:column;padding:0;min-width:0}
+  table.tabel-input td::before{content:attr(data-label);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--abu);margin:0 0 3px 2px}
+  table.tabel-input td:nth-child(3){grid-column:1/-1}
+  table.tabel-input td:nth-child(4){grid-column:1/2}
+  table.tabel-input td:nth-child(5){grid-column:2/3;align-self:end;align-items:flex-end}
+  table.tabel-input td:nth-child(5)::before{content:'';margin:0}
+  table.tabel-input input{height:44px;padding:8px;font-size:16px}
+  .hapus-baris{width:44px;height:44px;border:1px solid #F2B8B5;border-radius:8px;background:#FFF5F5;font-size:21px}
+  .area-preview{padding:8px;border-radius:9px;overflow:hidden}
+  .mode-toggle button{font-size:11.5px}
+  .item-riwayat{align-items:stretch}
+  .item-riwayat .info{flex-basis:100%;min-width:0}
+  .item-riwayat .btn{flex:1;min-height:42px}
+  .dlg-kepala{padding:10px 12px}
+  .dlg-isi{padding:10px}
+}
+
 /* ===== CETAK ===== */
 /* Ukuran halaman @page diatur lewat JavaScript sebelum print
    (A4 portrait untuk PDF, A5 landscape untuk dot matrix) */
@@ -162,7 +218,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   .wrap{display:block;padding:0;max-width:none}
   .panel{border:none;padding:0;border-radius:0}
   .area-preview{background:#fff;padding:0;border-radius:0;overflow:visible;display:block}
-  .lembar{box-shadow:none;margin:0}
+  .lembar{box-shadow:none;margin:0;zoom:1 !important}
   .lembar,.lembar *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
   /* PDF = A4 portrait */
   .lembar.pdf{width:auto;max-width:210mm;min-height:auto;padding:8mm 9mm}
@@ -752,11 +808,11 @@ function renderBarang(){
   items.forEach((it,i)=>{
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="text" inputmode="decimal" value="${esc(it.qty)}" data-i="${i}" data-k="qty" class="angka"></td>
-      <td><input type="text" list="daftarSatuan" value="${esc(it.unit)}" data-i="${i}" data-k="unit"></td>
-      <td><input type="text" list="dlBarang" value="${esc(it.name)}" data-i="${i}" data-k="name" placeholder="nama barang" autocomplete="off"></td>
-      <td><input type="text" inputmode="numeric" value="${it.price!==''? angkaID(+it.price):''}" data-i="${i}" data-k="price" class="angka"></td>
-      <td><button class="hapus-baris" title="Hapus baris" data-del="${i}">×</button></td>`;
+      <td data-label="Banyak"><input type="text" inputmode="decimal" value="${esc(it.qty)}" data-i="${i}" data-k="qty" class="angka"></td>
+      <td data-label="Satuan"><input type="text" list="daftarSatuan" value="${esc(it.unit)}" data-i="${i}" data-k="unit"></td>
+      <td data-label="Nama barang"><input type="text" list="dlBarang" value="${esc(it.name)}" data-i="${i}" data-k="name" placeholder="nama barang" autocomplete="off"></td>
+      <td data-label="Harga"><input type="text" inputmode="numeric" value="${it.price!==''? angkaID(+it.price):''}" data-i="${i}" data-k="price" class="angka"></td>
+      <td><button class="hapus-baris" title="Hapus baris" aria-label="Hapus barang ${i+1}" data-del="${i}">×</button></td>`;
     tb.appendChild(tr);
   });
   perbarui();
@@ -813,7 +869,27 @@ function perbarui(){
   $('totalForm').textContent = rupiah(tot);
   renderPdf(tot);
   renderDot(tot);
+  jadwalkanSkalaPreview();
 }
+
+/* Preview mengikuti lebar perangkat; ukuran cetak tetap 100%. */
+let rafSkalaPreview = 0;
+function jadwalkanSkalaPreview(){
+  cancelAnimationFrame(rafSkalaPreview);
+  rafSkalaPreview = requestAnimationFrame(sesuaikanSkalaPreview);
+}
+function sesuaikanSkalaPreview(){
+  const area = document.querySelector('.area-preview');
+  const lembar = mode === 'dot' ? $('lembarDot') : $('lembarPdf');
+  if(!area || !lembar || !area.clientWidth) return;
+  const gaya = getComputedStyle(area);
+  const ruang = area.clientWidth - parseFloat(gaya.paddingLeft) - parseFloat(gaya.paddingRight);
+  const lebarKertas = 210 / 25.4 * 96;
+  const skala = Math.min(1, Math.max(.32, ruang / lebarKertas));
+  $('lembarPdf').style.setProperty('--preview-scale', skala.toFixed(4));
+  $('lembarDot').style.setProperty('--preview-scale', skala.toFixed(4));
+}
+window.addEventListener('resize', jadwalkanSkalaPreview, {passive:true});
 
 function barisAlamat(){
   return [db.alamat, db.telp ? 'Telp/WA: '+db.telp : ''].filter(Boolean).join('  ·  ');
@@ -933,6 +1009,7 @@ function setMode(m){
   $('tabDot').setAttribute('aria-selected', m==='dot');
   const jp = $('judulPratinjau');
   if(jp) jp.textContent = m==='dot' ? 'Pratinjau — A5 Landscape (Dot Matrix)' : 'Pratinjau — A4 Portrait';
+  jadwalkanSkalaPreview();
 }
 $('tabPdf').addEventListener('click', ()=>setMode('pdf'));
 $('tabDot').addEventListener('click', ()=>setMode('dot'));
