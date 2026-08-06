@@ -535,7 +535,7 @@ const CAP_KOPERASI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOsAAADmCAYA
 const LEBAR = 78;          // kolom teks dot matrix (10 CPI, kertas 210 mm)
 const MIN_BARIS_PDF = 22;  // baris kosong minimum (A4 portrait muat lebih banyak)
 
-let db = { counter:{}, bank:{bank:'',an:'',rek:''}, rekeningList:[], penandatanganList:[], ttdNama:'', barangList:[], hargaPerDapur:{}, alamat:ALAMAT_DEFAULT, telp:'', sb:{url:'',key:''}, invoices:[] };
+let db = { counter:{}, bank:{bank:'',an:'',rek:''}, rekeningList:[], penandatanganList:[], ttdNama:'', barangList:[], hargaPerDapur:{}, hapusInvoiceIds:[], hapusPelanggan:[], alamat:ALAMAT_DEFAULT, telp:'', sb:{url:'',key:''}, invoices:[] };
 // barangList: [nama, ...] daftar nama barang yang pernah dipakai (untuk suggest)
 // hargaPerDapur: { "namadapur": { "namabarang": hargaTerakhir } }  + kunci "_umum" untuk lintas dapur
 let items = [];
@@ -596,7 +596,11 @@ async function muatDB(){
   // Admin selalu ada & di urutan teratas daftar penanda tangan
   db.penandatanganList = ['Admin', ...db.penandatanganList.filter(x=>x.toLowerCase()!=='admin')];
   if(!Array.isArray(db.barangList)) db.barangList = [];
+  if(!Array.isArray(db.invoices)) db.invoices = [];
   if(!db.hargaPerDapur || typeof db.hargaPerDapur!=='object') db.hargaPerDapur = {};
+  if(!Array.isArray(db.hapusInvoiceIds)) db.hapusInvoiceIds = [];
+  if(!Array.isArray(db.hapusPelanggan)) db.hapusPelanggan = [];
+  bersihkanDataTerhapus();
   // migrasi: bila ada rekening tunggal lama, masukkan ke daftar
   if(db.bank && (db.bank.rek||db.bank.an||db.bank.bank)) tambahRekening(db.bank, true);
   // rekening default koperasi: pastikan ada di daftar (paling atas) & jadi default aktif
@@ -1183,9 +1187,10 @@ $('isiRiwayat').addEventListener('click', async e=>{
   }
   if(b.hapus){
     if(confirm('Hapus invoice ini dari riwayat?')){
+      const invHapus = db.invoices.find(x=>x.id===b.hapus);
       db.invoices = db.invoices.filter(x=>x.id!==b.hapus);
       await simpanDB(); renderRiwayat();
-      sbHapusInvoice(b.hapus);
+      sbHapusInvoice(b.hapus, invHapus?.pelanggan||'');
     }
   }
 });
@@ -1570,8 +1575,28 @@ create table if not exists public.pengaturan (
   id int primary key,
   data jsonb not null
 );
+create table if not exists public.invoice_deletions (
+  id text primary key,
+  pelanggan text,
+  dihapus timestamptz not null default now()
+);
 alter table public.invoices enable row level security;
 alter table public.pengaturan enable row level security;
+alter table public.invoice_deletions enable row level security;
+create schema if not exists private;
+create or replace function private.prevent_deleted_invoice_restore()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if exists (select 1 from public.invoice_deletions d where d.id = new.id) then
+    raise exception 'Invoice yang telah dihapus tidak boleh dipulihkan' using errcode = '23505';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.prevent_deleted_invoice_restore() from public, anon, authenticated;
+drop trigger if exists prevent_deleted_invoice_restore on public.invoices;
+create trigger prevent_deleted_invoice_restore before insert or update on public.invoices
+  for each row execute function private.prevent_deleted_invoice_restore();
 create schema if not exists private;
 revoke all on schema private from public, anon;
 grant usage on schema private to authenticated;
@@ -1621,18 +1646,26 @@ drop policy if exists "anon semua invoices" on public.invoices;
 drop policy if exists "anon semua pengaturan" on public.pengaturan;
 drop policy if exists "staf semua invoices" on public.invoices;
 drop policy if exists "staf semua pengaturan" on public.pengaturan;
+drop policy if exists "staf semua penghapusan" on public.invoice_deletions;
 create policy "staf semua invoices" on public.invoices for all to authenticated
   using ((select private.is_invoice_staff()))
   with check ((select private.is_invoice_staff()));
 create policy "staf semua pengaturan" on public.pengaturan for all to authenticated
   using ((select private.is_invoice_staff()))
   with check ((select private.is_invoice_staff()));
-revoke all on public.invoices, public.pengaturan from anon;
-revoke all on public.invoices, public.pengaturan from authenticated;
+create policy "staf semua penghapusan" on public.invoice_deletions for all to authenticated
+  using ((select private.is_invoice_staff()))
+  with check ((select private.is_invoice_staff()));
+revoke all on public.invoices, public.pengaturan, public.invoice_deletions from anon;
+revoke all on public.invoices, public.pengaturan, public.invoice_deletions from authenticated;
 grant select, insert, update, delete on public.invoices to authenticated;
 grant select, insert, update on public.pengaturan to authenticated;
+grant select, insert, update, delete on public.invoice_deletions to authenticated;
 do $$ begin
   alter publication supabase_realtime add table public.invoices;
+exception when duplicate_object then null; when others then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table public.invoice_deletions;
 exception when duplicate_object then null; when others then null; end $$;
 
 -- ANTI-DUPLIKAT NOMOR (penting untuk banyak staff):
@@ -1733,6 +1766,17 @@ function muatSupabaseLib(){
     document.head.appendChild(s);
   });
 }
+function namaNormal(s){ return (s||'').trim().toLocaleLowerCase('id'); }
+function bersihkanDataTerhapus(){
+  const ids = new Set(db.hapusInvoiceIds||[]);
+  db.invoices = (db.invoices||[]).filter(inv=>!ids.has(inv.id));
+  const masihAda = new Set(db.invoices.map(inv=>namaNormal(inv.pelanggan)).filter(Boolean));
+  const hapusNama = new Set((db.hapusPelanggan||[]).map(namaNormal).filter(Boolean));
+  Object.keys(db.hargaPerDapur||{}).forEach(k=>{
+    const nama=namaNormal(k);
+    if(hapusNama.has(nama) && !masihAda.has(nama)) delete db.hargaPerDapur[k];
+  });
+}
 async function sbBuatKlien(){
   let url=(db.sb?.url||'').trim(), key=(db.sb?.key||'').trim();
   url = url.replace(/\/(rest|auth|realtime|storage)\/v1\/?$/,'').replace(/\/+$/,'');
@@ -1807,11 +1851,20 @@ async function sbHubungkan(diam){
   }
 }
 async function sbTarik(){
-  const {data, error} = await sb.from('invoices').select('data');
-  if(error) throw error;
+  const [invRes, hapusRes] = await Promise.all([
+    sb.from('invoices').select('data'),
+    sb.from('invoice_deletions').select('id,pelanggan')
+  ]);
+  if(invRes.error) throw invRes.error;
+  if(hapusRes.error) throw hapusRes.error;
+  db.hapusInvoiceIds = [...new Set([...(db.hapusInvoiceIds||[]), ...(hapusRes.data||[]).map(x=>x.id)])];
+  db.hapusPelanggan = [...new Set([...(db.hapusPelanggan||[]), ...(hapusRes.data||[]).map(x=>x.pelanggan).filter(Boolean)])];
+  bersihkanDataTerhapus();
+  const idsHapus = new Set(db.hapusInvoiceIds);
   const peta = new Map(db.invoices.map(x=>[x.id,x]));
-  (data||[]).forEach(r=>{
+  (invRes.data||[]).forEach(r=>{
     const inv = r.data; if(!inv||!inv.id) return;
+    if(idsHapus.has(inv.id)) return;
     const lok = peta.get(inv.id);
     if(!lok || (inv.diubah||'') > (lok.diubah||'')) peta.set(inv.id, inv);
   });
@@ -1828,6 +1881,7 @@ async function sbTarik(){
     if(d.telp) db.telp = d.telp;
     if(d.counter) Object.keys(d.counter).forEach(k=>{ db.counter[k]=Math.max(db.counter[k]||0, d.counter[k]); });
   }
+  bersihkanDataTerhapus();
   bangunDaftarDariInvoice();
   await simpanDB(); isiDatalistPelanggan(); perbarui();
 }
@@ -1852,6 +1906,7 @@ async function sbAmbilNomor(iso){
 async function sbDorongSemua(){
   if(!sb) return;
   try{
+    bersihkanDataTerhapus();
     if(db.invoices.length){
       const {error} = await sb.from('invoices').upsert(db.invoices.map(sbBaris));
       if(error) throw error;
@@ -1861,6 +1916,7 @@ async function sbDorongSemua(){
 }
 async function sbDorongInvoice(inv, percobaan){
   if(!sb) return;
+  if((db.hapusInvoiceIds||[]).includes(inv.id)) return;
   percobaan = percobaan||0;
   try{
     const {error} = await sb.from('invoices').upsert(sbBaris(inv));
@@ -1885,13 +1941,24 @@ async function sbDorongInvoice(inv, percobaan){
     setSbStatus('Online, gagal kirim: '+pesan, true);
   }
 }
-async function sbHapusInvoice(id){
+async function sbHapusInvoice(id, pelanggan){
   if(!sb) return;
-  try{ await sb.from('invoices').delete().eq('id', id); }catch(e){}
+  try{
+    db.hapusInvoiceIds = [...new Set([...(db.hapusInvoiceIds||[]), id])];
+    if(pelanggan) db.hapusPelanggan = [...new Set([...(db.hapusPelanggan||[]), pelanggan])];
+    bersihkanDataTerhapus();
+    await simpanDB();
+    const {error:tombstoneError} = await sb.from('invoice_deletions').upsert({id, pelanggan:pelanggan||null});
+    if(tombstoneError) throw tombstoneError;
+    const {error:deleteError} = await sb.from('invoices').delete().eq('id', id);
+    if(deleteError) throw deleteError;
+    await sbDorongPengaturan();
+  }catch(e){ setSbStatus('Gagal menghapus: '+(e.message||e), true); }
 }
 async function sbDorongPengaturan(){
   if(!sb) return;
   try{
+    bersihkanDataTerhapus();
     await sb.from('pengaturan').upsert({id:1, data:{bank:db.bank, rekeningList:db.rekeningList, penandatanganList:db.penandatanganList, barangList:db.barangList, hargaPerDapur:db.hargaPerDapur, alamat:db.alamat, telp:db.telp, counter:db.counter}});
   }catch(e){}
 }
@@ -1903,6 +1970,7 @@ function sbLangganan(){
         if(m.old && m.old.id) db.invoices = db.invoices.filter(x=>x.id!==m.old.id);
       }else if(m.new && m.new.data && m.new.data.id){
         const inv = m.new.data;
+        if((db.hapusInvoiceIds||[]).includes(inv.id)) return;
         const i = db.invoices.findIndex(x=>x.id===inv.id);
         if(i>=0){ if((inv.diubah||'') >= (db.invoices[i].diubah||'')) db.invoices[i]=inv; }
         else db.invoices.unshift(inv);
@@ -1917,6 +1985,15 @@ function sbLangganan(){
         if(noSegar !== $('noInv').value){ $('noInv').value = noSegar; perbarui(); }
       }
       info('Data tersinkron dari perangkat lain ✓');
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'invoice_deletions'}, async m=>{
+      const h=m.new;
+      if(!h?.id) return;
+      db.hapusInvoiceIds = [...new Set([...(db.hapusInvoiceIds||[]), h.id])];
+      if(h.pelanggan) db.hapusPelanggan = [...new Set([...(db.hapusPelanggan||[]), h.pelanggan])];
+      bersihkanDataTerhapus();
+      await simpanDB(); isiDatalistPelanggan();
+      if($('dlgRiwayat').open) renderRiwayat();
     })
     .subscribe();
 }

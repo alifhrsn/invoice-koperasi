@@ -75,6 +75,30 @@ grant execute on function public.cek_akses_invoice() to authenticated;
 alter table public.invoices enable row level security;
 alter table public.pengaturan enable row level security;
 alter table public.nomor_counter enable row level security;
+create table if not exists public.invoice_deletions (
+  id text primary key,
+  pelanggan text,
+  dihapus timestamptz not null default now()
+);
+alter table public.invoice_deletions enable row level security;
+create or replace function private.prevent_deleted_invoice_restore()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if exists (select 1 from public.invoice_deletions d where d.id = new.id) then
+    raise exception 'Invoice yang telah dihapus tidak boleh dipulihkan' using errcode = '23505';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.prevent_deleted_invoice_restore() from public, anon, authenticated;
+drop trigger if exists prevent_deleted_invoice_restore on public.invoices;
+create trigger prevent_deleted_invoice_restore
+  before insert or update on public.invoices
+  for each row execute function private.prevent_deleted_invoice_restore();
 
 drop policy if exists "anon semua invoices" on public.invoices;
 drop policy if exists "anon semua pengaturan" on public.pengaturan;
@@ -107,10 +131,21 @@ create policy "staf ubah pengaturan" on public.pengaturan
   using ((select private.is_invoice_staff()))
   with check ((select private.is_invoice_staff()));
 
-revoke all on public.invoices, public.pengaturan, public.nomor_counter from anon;
-revoke all on public.invoices, public.pengaturan, public.nomor_counter from authenticated;
+drop policy if exists "staf semua penghapusan" on public.invoice_deletions;
+create policy "staf semua penghapusan" on public.invoice_deletions
+  for all to authenticated
+  using ((select private.is_invoice_staff()))
+  with check ((select private.is_invoice_staff()));
+
+revoke all on public.invoices, public.pengaturan, public.nomor_counter, public.invoice_deletions from anon;
+revoke all on public.invoices, public.pengaturan, public.nomor_counter, public.invoice_deletions from authenticated;
 grant select, insert, update, delete on public.invoices to authenticated;
 grant select, insert, update on public.pengaturan to authenticated;
+grant select, insert, update, delete on public.invoice_deletions to authenticated;
+
+do $$ begin
+  alter publication supabase_realtime add table public.invoice_deletions;
+exception when duplicate_object then null; when others then null; end $$;
 
 create or replace function public.ambil_nomor(p_prefix text)
 returns int
