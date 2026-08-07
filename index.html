@@ -567,7 +567,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
         <ol style="margin:8px 0 8px 18px;line-height:1.7">
           <li>Buka <b>supabase.com</b> → buat akun & proyek baru (gratis).</li>
           <li>Di menu <b>SQL Editor</b> → New query → tempel SQL di bawah → <b>Run</b>.</li>
-          <li>Di <b>Authentication → Users</b>, akun internal Ajeng, Nurul, dan May dibuat oleh admin.</li>
+          <li>Di <b>Authentication → Users</b>, akun internal Ajeng, Nurul, May, dan Laznas dibuat oleh admin.</li>
           <li>Di menu <b>Project Settings → API</b>: salin <b>Project URL</b> dan <b>publishable key</b>, lalu klik <b>Hubungkan</b>.</li>
           <li>Staf masuk memakai username dan kata sandi masing-masing; data kemudian sinkron realtime.</li>
         </ol>
@@ -1786,7 +1786,8 @@ revoke all on private.staff_emails from public, anon, authenticated;
 insert into private.staff_emails(email) values
   ('ajeng@staff.invoice-koperasi.id'),
   ('nurul@staff.invoice-koperasi.id'),
-  ('may@staff.invoice-koperasi.id')
+  ('may@staff.invoice-koperasi.id'),
+  ('laznas@staff.invoice-koperasi.id')
 on conflict (email) do nothing;
 create or replace function private.enforce_invoice_staff_signup()
 returns trigger language plpgsql security definer set search_path = '' as $$
@@ -1973,7 +1974,8 @@ let sb = null, sbKanal = null, sbUser = null, sbProfil = null;
 const USERNAME_EMAIL = Object.freeze({
   ajeng:'ajeng@staff.invoice-koperasi.id',
   nurul:'nurul@staff.invoice-koperasi.id',
-  may:'may@staff.invoice-koperasi.id'
+  may:'may@staff.invoice-koperasi.id',
+  laznas:'laznas@staff.invoice-koperasi.id'
 });
 function namaDariUser(user){
   const email=(user?.email||'').toLowerCase();
@@ -2212,7 +2214,7 @@ function renderStafOnline(){
   const el=$('stafOnline');
   if(!el || !sbKanal){ if(el) el.hidden=true; return; }
   const semua=Object.values(sbKanal.presenceState()||{}).flat();
-  const dikenal=new Set(['Ajeng','Nurul','May']);
+  const dikenal=new Set(['Ajeng','Nurul','May','Laznas']);
   const orang=new Map();
   semua.forEach(p=>{ if(dikenal.has(p.nama)) orang.set(p.nama,p); });
   const daftar=[...orang.values()].sort((a,b)=>a.nama.localeCompare(b.nama,'id'));

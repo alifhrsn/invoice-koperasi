@@ -19,7 +19,8 @@ revoke all on private.staff_emails from public, anon, authenticated;
 insert into private.staff_emails (email) values
   ('ajeng@staff.invoice-koperasi.id'),
   ('nurul@staff.invoice-koperasi.id'),
-  ('may@staff.invoice-koperasi.id')
+  ('may@staff.invoice-koperasi.id'),
+  ('laznas@staff.invoice-koperasi.id')
 on conflict (email) do nothing;
 
 -- Blokir pendaftaran Auth untuk alamat di luar allowlist, termasuk bila
@@ -261,7 +262,7 @@ do $$ begin
     check (role_name in ('admin','staff'));
 exception when duplicate_object then null; end $$;
 update private.staff_emails set role_name='admin'
-  where email='ajeng@staff.invoice-koperasi.id';
+  where email in ('ajeng@staff.invoice-koperasi.id','laznas@staff.invoice-koperasi.id');
 update private.staff_emails set role_name='staff'
   where email in ('nurul@staff.invoice-koperasi.id','may@staff.invoice-koperasi.id');
 
