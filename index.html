@@ -1254,8 +1254,8 @@ async function terbitkanInvoice(diam){
   tombol.disabled=true; tombol.textContent='Menerbitkan…';
   try{
     inv=await sbTerbitkanInvoice(inv);
-    await simpanInvoiceLokal(inv);
     $('noInv').value=inv.no;
+    await simpanInvoiceLokal(inv);
     aturFormWorkflow(inv); perbarui();
     if(!diam) info('Invoice '+inv.no+' diterbitkan dan dikunci ✓');
     return inv;
