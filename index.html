@@ -77,6 +77,11 @@ table.tabel-input input{padding:7px 8px;font-size:13px}
 
 .aksi{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .status{font-size:12px;margin-top:8px;color:var(--hijau);min-height:16px}
+.workflow-notice{display:flex;align-items:center;gap:8px;border-radius:9px;padding:9px 11px;margin-bottom:12px;font-size:12px;font-weight:700}
+.workflow-notice.draft{background:#FFF7E6;border:1px solid #F0D9A0;color:#855B00}
+.workflow-notice.issued{background:#ECF8F0;border:1px solid #A8D9B7;color:#176B36}
+.badge-alur{display:inline-block;border-radius:99px;padding:3px 8px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.badge-draft{background:#FFF1CC;color:#855B00}.badge-issued{background:#DDF4E5;color:#176B36}
 
 /* ===== PREVIEW ===== */
 .preview-kepala{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
@@ -264,8 +269,10 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <button class="btn btn-putih" id="btnBaru">+ Invoice Baru</button>
   <button class="btn btn-putih" id="btnDashboard">📈 Dashboard</button>
   <button class="btn btn-biru" id="btnRiwayat">Riwayat</button>
+  <button class="btn btn-biru" id="btnAktivitas">Aktivitas</button>
   <button class="btn btn-biru" id="btnRekap">📊 Rekap Dapur</button>
   <button class="btn btn-biru" id="btnPengaturan" title="Pengaturan">⚙ Pengaturan</button>
+  <button class="btn btn-biru" id="btnKelolaStaf" hidden>👥 Kelola Staf</button>
   <button class="btn btn-bahaya" id="btnKeluar" hidden style="color:#fff;border-color:rgba(255,255,255,.65)">Keluar</button>
 </header>
 
@@ -274,6 +281,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <div class="kolom-form">
     <div class="panel" style="margin-bottom:14px">
       <h2>Data Invoice</h2>
+      <div class="workflow-notice draft" id="workflowNotice">📝 Draft — nomor resmi diberikan saat diterbitkan.</div>
       <div class="baris">
         <div>
           <label for="noInv">No. Invoice</label>
@@ -366,7 +374,8 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
       </div>
       <div class="kecil" style="color:var(--abu);margin:-2px 0 8px">Status bayar untuk pemantauan koperasi — tidak ikut tercetak di invoice.</div>
       <div class="aksi">
-        <button class="btn btn-hijau" id="btnSimpan">💾 Simpan</button>
+        <button class="btn btn-abu" id="btnSimpan">💾 Simpan Draft</button>
+        <button class="btn btn-hijau" id="btnTerbitkan">✓ Terbitkan & Kunci</button>
         <button class="btn btn-biru" id="btnCetakPdf">🖨 Cetak / PDF</button>
         <button class="btn btn-biru" id="btnCetakDot">🖨 Cetak Dot Matrix</button>
         <button class="btn btn-abu" id="btnTxt">⬇ File .txt</button>
@@ -457,6 +466,25 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
     <button class="btn btn-putih" id="btnTutupRiwayat">Tutup</button>
   </div>
   <div class="dlg-isi" id="isiRiwayat"></div>
+</dialog>
+
+<dialog id="dlgAktivitas">
+  <div class="dlg-kepala">
+    <b>Riwayat Aktivitas</b>
+    <button class="btn btn-putih" id="btnTutupAktivitas">Tutup</button>
+  </div>
+  <div class="dlg-isi" id="isiAktivitas"></div>
+</dialog>
+
+<dialog id="dlgStaf">
+  <div class="dlg-kepala">
+    <b>Kelola Peran Staf</b>
+    <button class="btn btn-putih" id="btnTutupStaf">Tutup</button>
+  </div>
+  <div class="dlg-isi">
+    <div class="kecil" style="margin-bottom:12px">Admin dapat menghapus invoice, mengubah pengaturan, dan mengelola peran. Minimal satu Admin harus tetap aktif.</div>
+    <div id="isiStaf"></div>
+  </div>
 </dialog>
 
 <!-- ============ REKAP PER DAPUR ============ -->
@@ -598,6 +626,7 @@ let db = { counter:{}, bank:{bank:'',an:'',rek:''}, rekeningList:[], penandatang
 // hargaPerDapur: { "namadapur": { "namabarang": hargaTerakhir } }  + kunci "_umum" untuk lintas dapur
 let items = [];
 let idAktif = null;
+let revisionAktif = null;
 let mode = 'pdf';
 let storageOk = true;
 
@@ -606,6 +635,14 @@ const $ = id => document.getElementById(id);
 const rupiah = n => 'Rp ' + (n||0).toLocaleString('id-ID');
 const angkaID = n => (n||0).toLocaleString('id-ID');
 const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function normalisasiInvoice(inv){
+  if(!inv || typeof inv!=='object') return inv;
+  if(!inv.workflow_status) inv.workflow_status = inv.no ? 'issued' : 'draft';
+  if(inv.workflow_status==='draft') inv.no = '';
+  return inv;
+}
+const statusAlur = inv => normalisasiInvoice(inv)?.workflow_status || 'issued';
+const invoiceTerbit = () => db.invoices.filter(inv=>statusAlur(inv)==='issued');
 
 function tglIndo(iso){
   if(!iso) return '';
@@ -655,6 +692,7 @@ async function muatDB(){
   db.penandatanganList = ['Admin', ...db.penandatanganList.filter(x=>x.toLowerCase()!=='admin')];
   if(!Array.isArray(db.barangList)) db.barangList = [];
   if(!Array.isArray(db.invoices)) db.invoices = [];
+  db.invoices = db.invoices.map(normalisasiInvoice).filter(Boolean);
   if(!db.hargaPerDapur || typeof db.hargaPerDapur!=='object') db.hargaPerDapur = {};
   if(!Array.isArray(db.hapusInvoiceIds)) db.hapusInvoiceIds = [];
   if(!Array.isArray(db.hapusPelanggan)) db.hapusPelanggan = [];
@@ -1024,7 +1062,8 @@ function aturUkuranHalaman(m){
 async function cetak(m){
   setMode(m);
   aturUkuranHalaman(m);
-  await simpanInvoice(true);
+  const inv=await terbitkanInvoice(true);
+  if(!inv){ info('Terbitkan invoice terlebih dahulu sebelum mencetak.','var(--merah)'); return; }
   window.print();
 }
 $('btnCetakPdf').addEventListener('click', ()=>cetak('pdf'));
@@ -1096,7 +1135,7 @@ $('btnUnduhPdf').addEventListener('click', async ()=>{
   if(barisValid().length===0){ info('Belum ada barang.','var(--merah)'); return; }
   info('Menyiapkan PDF…','var(--navy)');
   try{
-    await simpanInvoice(true);
+    if(!(await terbitkanInvoice(true))) throw new Error('Terbitkan invoice terlebih dahulu');
     const blob = await buatPdfBlob();
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=namaFilePdf();
     a.click(); URL.revokeObjectURL(a.href);
@@ -1108,7 +1147,7 @@ $('btnShare').addEventListener('click', async ()=>{
   if(barisValid().length===0){ info('Belum ada barang.','var(--merah)'); return; }
   info('Menyiapkan PDF untuk dibagikan…','var(--navy)');
   try{
-    await simpanInvoice(true);
+    if(!(await terbitkanInvoice(true))) throw new Error('Terbitkan invoice terlebih dahulu');
     const blob = await buatPdfBlob();
     const file = new File([blob], namaFilePdf(), {type:'application/pdf'});
     const judul = 'Invoice '+($('noInv').value||'')+' — '+($('pelanggan').value||'');
@@ -1138,7 +1177,7 @@ function ambilForm(){
   const inv0 = idAktif ? db.invoices.find(x=>x.id===idAktif) : null;
   return {
     id: idAktif || ('inv_'+Date.now()),
-    no: $('noInv').value.trim(),
+    no: statusAlur(inv0)==='issued' ? $('noInv').value.trim() : '',
     tanggal: $('tgl').value,
     pelanggan: $('pelanggan').value.trim(),
     items: barisValid().map(it=>({qty:it.qty, unit:it.unit, name:it.name, price:+it.price||0})),
@@ -1147,61 +1186,47 @@ function ambilForm(){
     ttdNama: $('ttdNama').value.trim(),
     catatan: $('catatan').value.trim(),
     status: $('statusBayar') ? $('statusBayar').value : ((inv0 && inv0.status) ? inv0.status : 'Belum'),   // status bayar INTERNAL (tidak tampil di invoice)
+    workflow_status: inv0 ? statusAlur(inv0) : 'draft',
+    revision_of: inv0?.revision_of || revisionAktif || null,
     dibuat: (inv0 && inv0.dibuat) ? inv0.dibuat : new Date().toISOString(),  // waktu pembuatan (tetap)
     diubah: new Date().toISOString()
   };
 }
-// batas edit 48 jam sejak dibuat
-const BATAS_EDIT_MS = 48*60*60*1000;
-function lewatBatasEdit(inv){
-  if(!inv || !inv.dibuat) return false;
-  return (Date.now() - new Date(inv.dibuat).getTime()) > BATAS_EDIT_MS;
+function aturFormWorkflow(inv){
+  const diterbitkan = statusAlur(inv)==='issued';
+  const notice=$('workflowNotice');
+  notice.className='workflow-notice '+(diterbitkan?'issued':'draft');
+  notice.textContent=diterbitkan
+    ? '🔒 Diterbitkan — isi invoice terkunci. Gunakan Revisi untuk membuat perubahan.'
+    : '📝 Draft — nomor resmi diberikan saat diterbitkan.';
+  ['tgl','pelanggan','bank','an','rek','ttdNama','catatan','pilihRek'].forEach(id=>{ if($(id)) $(id).disabled=diterbitkan; });
+  $('tbodyBarang').querySelectorAll('input').forEach(el=>el.disabled=diterbitkan);
+  $('tbodyBarang').querySelectorAll('.hapus-baris').forEach(el=>el.disabled=diterbitkan);
+  $('btnTambah').disabled=diterbitkan;
+  $('btnSimpan').hidden=diterbitkan;
+  $('btnTerbitkan').hidden=diterbitkan;
 }
 async function simpanInvoice(diam){
   let inv = ambilForm();
-  if(!inv.no){ if(!diam) info('Isi nomor invoice dulu.','var(--merah)'); return; }
-  if(inv.items.length===0){ if(!diam) info('Belum ada barang.','var(--merah)'); return; }
-  // peringatan edit setelah 48 jam
-  const lama = db.invoices.find(x=>x.id===inv.id);
-  if(lama && lewatBatasEdit(lama) && !diam){
-    const jam = Math.floor((Date.now()-new Date(lama.dibuat).getTime())/3600000);
-    const lanjut = confirm('⚠ Invoice ini dibuat '+jam+' jam lalu (lebih dari 48 jam).\n'+
-      'Sebaiknya invoice lama tidak diubah demi ketertiban pembukuan.\nTetap simpan perubahan?');
-    if(!lanjut){ info('Perubahan dibatalkan.','var(--merah)'); return; }
-  }
-  // cegah nomor kembar dengan invoice lain
-  const invBaru = !db.invoices.some(x=>x.id===inv.id);
-  let tersimpanServer = false;
-
-  // Server memberi nomor dan menulis invoice baru dalam satu transaksi atomik.
-  if(invBaru){
-    if(!sb){
-      if(!diam) info('Invoice baru harus disimpan saat online agar nomor tidak duplikat.','var(--merah)');
-      return;
-    }
-    const tombol=$('btnSimpan');
-    tombol.disabled=true; tombol.textContent='Menyimpan…';
-    try{
-      inv = await sbSimpanInvoiceBaru(inv);
-      tersimpanServer = true;
-      $('noInv').value = inv.no;
-    }catch(e){
-      if(!diam) info('Gagal menyimpan ke server: '+(e.message||e),'var(--merah)');
-      return;
-    }finally{
-      tombol.disabled=false; tombol.textContent='💾 Simpan';
-    }
-  }
-
-  const kembar = db.invoices.find(x=>x.no===inv.no && x.id!==inv.id);
-  if(kembar){
-    if(!diam) info('Nomor '+inv.no+' sudah dipakai invoice lain. Penyimpanan dibatalkan.','var(--merah)');
-    return;
-  }
+  if(!sb){ if(!diam) info('Draft harus disimpan saat online agar dapat dilanjutkan staf lain.','var(--merah)'); return false; }
+  inv.workflow_status='draft'; inv.no='';
+  const tombol=$('btnSimpan');
+  tombol.disabled=true; tombol.textContent='Menyimpan…';
+  try{ inv=await sbSimpanDraft(inv); }
+  catch(e){ if(!diam) info('Gagal menyimpan draft: '+(e.message||e),'var(--merah)'); return false; }
+  finally{ tombol.disabled=false; tombol.textContent='💾 Simpan Draft'; }
+  await simpanInvoiceLokal(inv);
+  $('noInv').value='DRAFT — belum diterbitkan';
+  aturFormWorkflow(inv);
+  if(!diam) info('Draft tersimpan ✓');
+  return true;
+}
+async function simpanInvoiceLokal(inv){
+  normalisasiInvoice(inv);
   const idx = db.invoices.findIndex(x=>x.id===inv.id);
   if(idx>=0) db.invoices[idx]=inv; else db.invoices.unshift(inv);
   idAktif = inv.id;
-  catatNomor(inv.no, inv.tanggal);
+  if(statusAlur(inv)==='issued') catatNomor(inv.no, inv.tanggal);
   db.bank = inv.bank;
   tambahRekening(inv.bank, true);          // simpan rekening ke daftar pilihan
   tambahPenandatangan(inv.ttdNama, true);  // simpan penanda tangan ke daftar pilihan
@@ -1214,12 +1239,30 @@ async function simpanInvoice(diam){
   });
   await simpanDB();
   isiDatalistPelanggan();
-  if(!tersimpanServer) sbDorongInvoice(inv); // invoice baru sudah ditulis atomik oleh RPC
-  sbDorongPengaturan();
+  if(bolehAdmin()) sbDorongPengaturan();
   sbPerbaruiPresence();
-  if(!diam) info(storageOk ? 'Invoice tersimpan ✓' : 'Tersimpan sementara (penyimpanan gagal).', storageOk?null:'var(--merah)');
 }
 $('btnSimpan').addEventListener('click', ()=>simpanInvoice(false));
+
+async function terbitkanInvoice(diam){
+  const aktif=idAktif ? db.invoices.find(x=>x.id===idAktif) : null;
+  if(aktif && statusAlur(aktif)==='issued') return aktif;
+  let inv=ambilForm();
+  if(inv.items.length===0){ if(!diam) info('Belum ada barang.','var(--merah)'); return null; }
+  if(!sb){ if(!diam) info('Harus online untuk menerbitkan dan memperoleh nomor resmi.','var(--merah)'); return null; }
+  const tombol=$('btnTerbitkan');
+  tombol.disabled=true; tombol.textContent='Menerbitkan…';
+  try{
+    inv=await sbTerbitkanInvoice(inv);
+    await simpanInvoiceLokal(inv);
+    $('noInv').value=inv.no;
+    aturFormWorkflow(inv); perbarui();
+    if(!diam) info('Invoice '+inv.no+' diterbitkan dan dikunci ✓');
+    return inv;
+  }catch(e){ if(!diam) info('Gagal menerbitkan: '+(e.message||e),'var(--merah)'); return null; }
+  finally{ tombol.disabled=false; tombol.textContent='✓ Terbitkan & Kunci'; }
+}
+$('btnTerbitkan').addEventListener('click', ()=>terbitkanInvoice(false));
 
 function renderRiwayat(){
   const wadah = $('isiRiwayat');
@@ -1228,20 +1271,21 @@ function renderRiwayat(){
   db.invoices.forEach(inv=>{
     const el=document.createElement('div');
     el.className='item-riwayat';
+    const alur=statusAlur(inv), draft=alur==='draft';
     const st = inv.status||'Belum';
     const warna = st==='Lunas'?'#1a7f3c':(st==='Sebagian'?'#b8860b':'#c0392b');
     const emo = st==='Lunas'?'🟢':(st==='Sebagian'?'🟡':'🔴');
-    el.innerHTML=`<div class="info"><b class="nom">${esc(inv.no)}</b>
+    el.innerHTML=`<div class="info"><b class="nom">${draft?'DRAFT':esc(inv.no)}</b> <span class="badge-alur ${draft?'badge-draft':'badge-issued'}">${draft?'Draft':'Diterbitkan'}</span>
       <span>${tglIndo(inv.tanggal)} · ${esc(inv.pelanggan||'-')} · ${inv.items.length} barang</span>
       <span style="font-weight:700;color:var(--tinta)">${rupiah(inv.total)} &nbsp; <span style="color:${warna};font-weight:700">${emo} ${st}</span></span></div>
-      <select data-status="${inv.id}" title="Status bayar (internal, tidak tampil di invoice)" style="max-width:120px">
+      ${draft?'':`<select data-status="${inv.id}" title="Status bayar (internal, tidak tampil di invoice)" style="max-width:120px">
         <option value="Belum"${st==='Belum'?' selected':''}>🔴 Belum</option>
         <option value="Sebagian"${st==='Sebagian'?' selected':''}>🟡 Sebagian</option>
         <option value="Lunas"${st==='Lunas'?' selected':''}>🟢 Lunas</option>
-      </select>
+      </select>`}
       <button class="btn btn-biru" data-buka="${inv.id}">Buka</button>
-      <button class="btn btn-abu" data-salin="${inv.id}">Duplikat</button>
-      <button class="btn btn-bahaya" data-hapus="${inv.id}">Hapus</button>`;
+      ${draft?'':`<button class="btn btn-abu" data-revisi="${inv.id}">Revisi</button>`}
+      ${bolehAdmin()?`<button class="btn btn-bahaya" data-hapus="${inv.id}">Hapus</button>`:''}`;
     wadah.appendChild(el);
   });
 }
@@ -1251,8 +1295,9 @@ $('isiRiwayat').addEventListener('change', async e=>{
   if(!id) return;
   const inv=db.invoices.find(x=>x.id===id);
   if(inv){
-    inv.status=e.target.value; inv.diubah=new Date().toISOString();
-    await simpanDB(); sbDorongInvoice(inv); renderRiwayat();
+    try{ Object.assign(inv,await sbUbahStatusInvoice(id,e.target.value)); }
+    catch(err){ info('Gagal mengubah status: '+(err.message||err),'var(--merah)'); renderRiwayat(); return; }
+    await simpanDB(); renderRiwayat();
     if(idAktif===id && $('statusBayar')) $('statusBayar').value=inv.status;  // sinkron ke form utama
     info('Status '+inv.no+' → '+inv.status);
   }
@@ -1262,28 +1307,67 @@ $('isiRiwayat').addEventListener('click', async e=>{
   if(b.buka){
     const invBuka = db.invoices.find(x=>x.id===b.buka);
     isiForm(invBuka); $('dlgRiwayat').close();
-    if(lewatBatasEdit(invBuka)) info('⚠ Invoice ini sudah lebih dari 48 jam — sebaiknya tidak diubah.','var(--merah)');
   }
-  if(b.salin){
-    const s=JSON.parse(JSON.stringify(db.invoices.find(x=>x.id===b.salin)));
-    s.id=null; isiForm(s,true); $('dlgRiwayat').close();
-    info('Invoice diduplikat — nomor baru dibuat.');
+  if(b.revisi){
+    const sumber=db.invoices.find(x=>x.id===b.revisi);
+    const s=JSON.parse(JSON.stringify(sumber));
+    s.id=null; s.no=''; s.workflow_status='draft'; s.revision_of=sumber.id;
+    isiForm(s,true); $('dlgRiwayat').close();
+    info('Draft revisi dibuat. Simpan draft atau terbitkan bila sudah siap.');
   }
   if(b.hapus){
+    if(!bolehAdmin()){ info('Hanya Admin yang dapat menghapus invoice.','var(--merah)'); return; }
     if(confirm('Hapus invoice ini dari riwayat?')){
       const invHapus = db.invoices.find(x=>x.id===b.hapus);
-      db.invoices = db.invoices.filter(x=>x.id!==b.hapus);
-      await simpanDB(); renderRiwayat();
-      sbHapusInvoice(b.hapus, invHapus?.pelanggan||'');
+      const ok=await sbHapusInvoice(b.hapus, invHapus?.pelanggan||'');
+      if(ok){ db.invoices = db.invoices.filter(x=>x.id!==b.hapus); await simpanDB(); renderRiwayat(); info('Invoice dihapus.'); }
     }
   }
 });
 $('btnRiwayat').addEventListener('click', ()=>{ renderRiwayat(); $('dlgRiwayat').showModal(); });
 $('btnTutupRiwayat').addEventListener('click', ()=>$('dlgRiwayat').close());
 
+const LABEL_AKTIVITAS={draft_created:'Draft dibuat',draft_updated:'Draft diperbarui',issued:'Invoice diterbitkan',payment_status_changed:'Status pembayaran diubah',deleted:'Invoice dihapus',role_changed:'Peran staf diubah'};
+async function renderAktivitas(){
+  const wadah=$('isiAktivitas');
+  wadah.innerHTML='<div class="kosong">Memuat aktivitas…</div>';
+  if(!sb){ wadah.innerHTML='<div class="kosong">Harus online untuk melihat aktivitas.</div>'; return; }
+  const {data,error}=await sb.from('invoice_activity').select('invoice_id,action,actor_name,actor_email,details,created_at').order('created_at',{ascending:false}).limit(200);
+  if(error){ wadah.innerHTML=`<div class="kosong">${esc(error.message)}</div>`; return; }
+  if(!data?.length){ wadah.innerHTML='<div class="kosong">Belum ada aktivitas tercatat.</div>'; return; }
+  wadah.innerHTML=data.map(a=>{
+    const waktu=new Date(a.created_at).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'});
+    const target=a.details?.no || (a.invoice_id ? a.invoice_id : a.details?.email||'');
+    return `<div class="item-riwayat"><div class="info"><b>${esc(LABEL_AKTIVITAS[a.action]||a.action)}</b>
+      <span>${esc(a.actor_name||'Staf')} · ${esc(waktu)}</span>
+      ${target?`<span>${esc(target)}</span>`:''}</div></div>`;
+  }).join('');
+}
+$('btnAktivitas').addEventListener('click',async()=>{ $('dlgAktivitas').showModal(); await renderAktivitas(); });
+$('btnTutupAktivitas').addEventListener('click',()=>$('dlgAktivitas').close());
+
+async function renderStaf(){
+  const wadah=$('isiStaf'); wadah.innerHTML='<div class="kosong">Memuat staf…</div>';
+  if(!bolehAdmin()){ wadah.innerHTML='<div class="kosong">Hanya Admin yang dapat mengelola staf.</div>'; return; }
+  const {data,error}=await sb.rpc('daftar_staff_invoice');
+  if(error){ wadah.innerHTML=`<div class="kosong">${esc(error.message)}</div>`; return; }
+  wadah.innerHTML=(data||[]).map(s=>`<div class="item-riwayat"><div class="info"><b>${esc(s.nama)}</b><span>${esc(s.email)}</span></div>
+    <select data-role-email="${esc(s.email)}" style="max-width:140px"><option value="staff"${s.role_name==='staff'?' selected':''}>Staf</option><option value="admin"${s.role_name==='admin'?' selected':''}>Admin</option></select></div>`).join('');
+}
+$('btnKelolaStaf').addEventListener('click',async()=>{ if(!bolehAdmin()) return; $('dlgStaf').showModal(); await renderStaf(); });
+$('btnTutupStaf').addEventListener('click',()=>$('dlgStaf').close());
+$('isiStaf').addEventListener('change',async e=>{
+  const email=e.target.dataset.roleEmail; if(!email) return;
+  e.target.disabled=true;
+  const {error}=await sb.rpc('kelola_peran_staff',{p_email:email,p_role:e.target.value});
+  if(error){ info('Gagal mengubah peran: '+error.message,'var(--merah)'); await renderStaf(); return; }
+  sbProfil=await sbPastikanStaf(); terapkanPeran(); await renderStaf();
+  info('Peran staf diperbarui ✓');
+});
+
 /* ================== REKAP PER DAPUR ================== */
 function daftarDapur(){
-  return [...new Set(db.invoices.map(x=>(x.pelanggan||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'id'));
+  return [...new Set(invoiceTerbit().map(x=>(x.pelanggan||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'id'));
 }
 function isiPilihanDapur(){
   const sel=$('pilihDapur'); if(!sel) return;
@@ -1294,7 +1378,7 @@ function isiPilihanDapur(){
   if(dpr.includes(skr)) sel.value=skr;
 }
 function hitungRekap(dapur){
-  const inv = db.invoices.filter(x=>(x.pelanggan||'').trim()===dapur)
+  const inv = invoiceTerbit().filter(x=>(x.pelanggan||'').trim()===dapur)
     .sort((a,b)=>(b.tanggal||'').localeCompare(a.tanggal||''));
   const totalBelanja = inv.reduce((s,x)=>s+(+x.total||0),0);
   // rekap barang: total qty & nilai per barang
@@ -1382,7 +1466,7 @@ $('btnRekapCetak').addEventListener('click', ()=>{
 /* ================== DASHBOARD ================== */
 function daftarPeriode(){
   const set = new Set();
-  db.invoices.forEach(x=>{ if(x.tanggal && /^\d{4}-\d{2}/.test(x.tanggal)) set.add(x.tanggal.slice(0,7)); });
+  invoiceTerbit().forEach(x=>{ if(x.tanggal && /^\d{4}-\d{2}/.test(x.tanggal)) set.add(x.tanggal.slice(0,7)); });
   const arr = [...set].sort().reverse();
   return arr;
 }
@@ -1398,7 +1482,7 @@ function isiPilihanPeriode(){
   if(skr && (skr==='_semua'||arr.includes(skr))) sel.value=skr;
 }
 function hitungDashboard(periode){
-  let inv = db.invoices.slice();
+  let inv = invoiceTerbit();
   if(periode && periode!=='_semua') inv = inv.filter(x=>(x.tanggal||'').slice(0,7)===periode);
   const total = inv.reduce((s,x)=>s+(+x.total||0),0);
   // ringkasan status bayar (internal)
@@ -1481,8 +1565,9 @@ $('dashPeriode').addEventListener('change', renderDashboard);
 /* ================== FORM BARU / ISI ================== */
 function isiForm(inv, nomorBaru){
   idAktif = nomorBaru ? null : inv.id;
+  revisionAktif = inv.revision_of || null;
   $('tgl').value = nomorBaru ? hariIni() : inv.tanggal;
-  $('noInv').value = nomorBaru ? nomorBerikut($('tgl').value) : inv.no;
+  $('noInv').value = nomorBaru || statusAlur(inv)==='draft' ? 'DRAFT — belum diterbitkan' : inv.no;
   $('pelanggan').value = inv.pelanggan||'';
   $('bank').value = inv.bank?.bank||'';
   $('an').value = inv.bank?.an||'';
@@ -1494,13 +1579,15 @@ function isiForm(inv, nomorBaru){
   items = inv.items.map(x=>({qty:String(x.qty),unit:x.unit,name:x.name,price:x.price}));
   if(items.length===0) items.push({qty:'',unit:'',name:'',price:''});
   renderBarang();
+  aturFormWorkflow(nomorBaru ? {...inv,workflow_status:'draft'} : inv);
   sbPerbaruiPresence();
 }
 function hariIni(){ const d=new Date(); return d.toISOString().slice(0,10); }
 function formBaru(){
   idAktif = null;
+  revisionAktif = null;
   $('tgl').value = hariIni();
-  $('noInv').value = nomorBerikut($('tgl').value);
+  $('noInv').value = 'DRAFT — belum diterbitkan';
   $('pelanggan').value = '';
   // rekening & penanda tangan terakhir dipakai sebagai default (bisa diganti/dipilih/dikosongkan)
   const rt = db.rekeningList[0] || db.bank || {};
@@ -1513,12 +1600,12 @@ function formBaru(){
   $('pilihRek').value = '';
   items = [{qty:'',unit:'',name:'',price:''}];
   renderBarang();
+  aturFormWorkflow({workflow_status:'draft'});
   sbPerbaruiPresence();
 }
 $('btnBaru').addEventListener('click', ()=>{ formBaru(); info('Form baru siap.'); });
 $('tgl').addEventListener('change', ()=>{
   if(!$('tgl').value) $('tgl').value = hariIni();   // tanggal wajib terisi
-  if(!idAktif && /^INV\/KMS\//.test($('noInv').value)) $('noInv').value = nomorBerikut($('tgl').value);
   perbarui();
 });
 ['noInv','pelanggan','bank','an','rek','catatan','ttdNama'].forEach(id=> $(id).addEventListener('input', perbarui));
@@ -1527,8 +1614,9 @@ $('statusBayar').addEventListener('change', async ()=>{
   if(idAktif){
     const inv=db.invoices.find(x=>x.id===idAktif);
     if(inv){
-      inv.status=$('statusBayar').value; inv.diubah=new Date().toISOString();
-      await simpanDB(); sbDorongInvoice(inv);
+      try{ Object.assign(inv,await sbUbahStatusInvoice(inv.id,$('statusBayar').value)); }
+      catch(err){ info('Gagal mengubah status: '+(err.message||err),'var(--merah)'); return; }
+      await simpanDB();
       if($('dlgRiwayat')?.open) renderRiwayat();
       info('Status → '+inv.status);
     }
@@ -1586,6 +1674,7 @@ function isiPilihanPenandatangan(){
 
 /* ================== PENGATURAN ================== */
 $('btnPengaturan').addEventListener('click', ()=>{
+  if(!bolehAdmin()){ info('Hanya Admin yang dapat membuka pengaturan.','var(--merah)'); return; }
   $('setAlamat').value = db.alamat||'';
   $('setTelp').value = db.telp||'';
   $('sbUrl').value = db.sb?.url||'';
@@ -1594,6 +1683,7 @@ $('btnPengaturan').addEventListener('click', ()=>{
 });
 $('btnTutupPengaturan').addEventListener('click', ()=>$('dlgPengaturan').close());
 $('btnSimpanPengaturan').addEventListener('click', async ()=>{
+  if(!bolehAdmin()) return;
   db.alamat = $('setAlamat').value.trim();
   db.telp = $('setTelp').value.trim();
   await simpanDB();
@@ -1871,14 +1961,15 @@ select substring(no from 1 for 15) as prefix, max(
 from public.invoices where no ~ '^INV/KMS/\\\\d{4}/\\\\d{2}/\\\\d+$'
 group by substring(no from 1 for 15)
 on conflict (prefix) do update set terakhir = greatest(public.nomor_counter.terakhir, excluded.terakhir);`;
-$('sbSql').value = SB_SQL;
+const SB_SQL_AMAN = `-- Database proyek ini sudah dikonfigurasi dan dimigrasikan.\n-- Sumber skema lengkap: supabase-security.sql di repositori GitHub.\n-- Jangan menjalankan potongan SQL lama karena dapat melemahkan kebijakan akses.`;
+$('sbSql').value = SB_SQL_AMAN;
 $('btnSalinSql').addEventListener('click', async ()=>{
-  try{ await navigator.clipboard.writeText(SB_SQL); $('btnSalinSql').textContent='Tersalin ✓'; }
+  try{ await navigator.clipboard.writeText(SB_SQL_AMAN); $('btnSalinSql').textContent='Tersalin ✓'; }
   catch(e){ $('sbSql').select(); document.execCommand('copy'); $('btnSalinSql').textContent='Tersalin ✓'; }
   setTimeout(()=>$('btnSalinSql').textContent='Salin SQL',3000);
 });
 
-let sb = null, sbKanal = null, sbUser = null;
+let sb = null, sbKanal = null, sbUser = null, sbProfil = null;
 const USERNAME_EMAIL = Object.freeze({
   ajeng:'ajeng@staff.invoice-koperasi.id',
   nurul:'nurul@staff.invoice-koperasi.id',
@@ -1889,6 +1980,13 @@ function namaDariUser(user){
   const kunci=Object.keys(USERNAME_EMAIL).find(n=>USERNAME_EMAIL[n]===email);
   return kunci ? kunci.charAt(0).toUpperCase()+kunci.slice(1) : 'Staf';
 }
+function bolehAdmin(){ return sbProfil?.role==='admin'; }
+function terapkanPeran(){
+  const masuk=!!sbUser;
+  $('btnKelolaStaf').hidden=!(masuk&&bolehAdmin());
+  $('btnPengaturan').hidden=!(masuk&&bolehAdmin());
+  if(masuk) $('authUser').textContent=`${namaDariUser(sbUser)} · ${bolehAdmin()?'Admin':'Staf'}`;
+}
 function authPesan(pesan, sukses){
   $('authError').textContent = pesan || '';
   $('authError').style.color = sukses ? 'var(--hijau)' : 'var(--merah)';
@@ -1898,6 +1996,8 @@ function authKunci(pesan){
   $('authUser').hidden = true;
   $('stafOnline').hidden = true;
   $('btnKeluar').hidden = true;
+  $('btnKelolaStaf').hidden = true;
+  $('btnPengaturan').hidden = true;
   authPesan(pesan || '');
   setTimeout(()=>$('authEmail')?.focus(), 0);
 }
@@ -1908,6 +2008,7 @@ function authBuka(user, offline){
   $('authUser').hidden = !user;
   $('btnKeluar').hidden = !user;
   if(user) $('authUser').textContent = namaDariUser(user);
+  terapkanPeran();
   if(offline) setSbStatus('Offline — data lokal', false);
 }
 function setSbStatus(teks, online){
@@ -1947,10 +2048,13 @@ async function sbPastikanStaf(){
   const {data, error} = await sb.rpc('cek_akses_invoice');
   if(error) throw error;
   if(data !== true) throw new Error('Email ini belum terdaftar sebagai staf invoice');
+  const profil=await sb.rpc('profil_invoice');
+  if(profil.error) throw profil.error;
+  return profil.data;
 }
 async function sbMulaiOnline(user){
-  await sbPastikanStaf();
   sbUser = user;
+  sbProfil = await sbPastikanStaf();
   authBuka(user);
   await sbTarik();
   await sbDorongSemua();
@@ -1984,14 +2088,10 @@ $('btnKeluar').addEventListener('click', async ()=>{
   try{ if(sbKanal) await sbKanal.untrack(); }catch(e){}
   try{ if(sbKanal&&sb) await sb.removeChannel(sbKanal); }catch(e){}
   try{ if(sb) await sb.auth.signOut({scope:'local'}); }catch(e){}
-  sbKanal=null; sbUser=null;
+  sbKanal=null; sbUser=null; sbProfil=null;
   setSbStatus('Keluar — login diperlukan', false);
   authKunci('Anda sudah keluar dengan aman.');
 });
-function sbBaris(inv){
-  return { id:inv.id, no:inv.no, tanggal:inv.tanggal||null, pelanggan:inv.pelanggan,
-           total:inv.total, data:inv, diubah:inv.diubah||new Date().toISOString() };
-}
 async function sbHubungkan(diam){
   if(!diam) setSbStatus('Menghubungkan…', false);
   try{
@@ -2020,12 +2120,13 @@ async function sbTarik(){
   db.hapusPelanggan = [...new Set([...(db.hapusPelanggan||[]), ...(hapusRes.data||[]).map(x=>x.pelanggan).filter(Boolean)])];
   bersihkanDataTerhapus();
   const idsHapus = new Set(db.hapusInvoiceIds);
-  const peta = new Map(db.invoices.map(x=>[x.id,x]));
+  // Saat online, database adalah sumber kebenaran agar invoice terkunci tidak
+  // dapat ditimpa kembali oleh salinan lokal lama.
+  const peta = new Map();
   (invRes.data||[]).forEach(r=>{
-    const inv = r.data; if(!inv||!inv.id) return;
+    const inv = normalisasiInvoice(r.data); if(!inv||!inv.id) return;
     if(idsHapus.has(inv.id)) return;
-    const lok = peta.get(inv.id);
-    if(!lok || (inv.diubah||'') > (lok.diubah||'')) peta.set(inv.id, inv);
+    peta.set(inv.id, inv);
   });
   db.invoices = [...peta.values()].sort((a,b)=>(b.diubah||'').localeCompare(a.diubah||''));
   const ps = await sb.from('pengaturan').select('data').eq('id',1).maybeSingle();
@@ -2044,11 +2145,23 @@ async function sbTarik(){
   bangunDaftarDariInvoice();
   await simpanDB(); isiDatalistPelanggan(); perbarui();
 }
-async function sbSimpanInvoiceBaru(inv){
-  const {data, error} = await sb.rpc('buat_invoice_baru', {p_invoice:inv});
+async function sbSimpanDraft(inv){
+  const {data, error} = await sb.rpc('simpan_draft', {p_invoice:inv});
   if(error) throw error;
-  if(!data?.id || !data?.no) throw new Error('Server tidak mengembalikan invoice yang valid');
+  if(!data?.id || data.workflow_status!=='draft') throw new Error('Server tidak mengembalikan draft yang valid');
   return data;
+}
+async function sbTerbitkanInvoice(inv){
+  const {data,error}=await sb.rpc('terbitkan_invoice',{p_invoice:inv});
+  if(error) throw error;
+  if(!data?.id || !data?.no || data.workflow_status!=='issued') throw new Error('Server tidak mengembalikan invoice resmi');
+  return data;
+}
+async function sbUbahStatusInvoice(id,status){
+  if(!sb) throw new Error('Tidak terhubung ke server');
+  const {data,error}=await sb.rpc('ubah_status_invoice',{p_id:id,p_status:status});
+  if(error) throw error;
+  return normalisasiInvoice(data);
 }
 // Kompatibilitas untuk tab versi lama; versi baru memakai buat_invoice_baru.
 // Ambil nomor invoice berikutnya secara ATOMIK dari server (anti-duplikat lintas staff).
@@ -2073,47 +2186,23 @@ async function sbDorongSemua(){
   if(!sb) return;
   try{
     bersihkanDataTerhapus();
-    if(db.invoices.length){
-      const {error} = await sb.from('invoices').upsert(db.invoices.map(sbBaris));
-      if(error) throw error;
-    }
-    await sbDorongPengaturan();
+    if(bolehAdmin()) await sbDorongPengaturan();
   }catch(e){ setSbStatus('Online, sebagian gagal terkirim: '+(e.message||e), true); }
 }
-async function sbDorongInvoice(inv){
-  if(!sb) return;
-  if((db.hapusInvoiceIds||[]).includes(inv.id)) return;
-  try{
-    const {error} = await sb.from('invoices').upsert(sbBaris(inv));
-    if(error) throw error;
-  }catch(e){
-    const pesan = (e.message||e)+'';
-    const bentrokNomor = /duplicate key|invoices_no_unik|unique/i.test(pesan);
-    if(bentrokNomor){
-      setSbStatus('Perubahan ditolak: nomor invoice sudah digunakan', false);
-      info('Nomor invoice sudah digunakan. Data server tidak diubah.','var(--merah)');
-      try{ await sbTarik(); }catch(err){}
-      return;
-    }
-    setSbStatus('Online, gagal kirim: '+pesan, true);
-  }
-}
 async function sbHapusInvoice(id, pelanggan){
-  if(!sb) return;
+  if(!sb || !bolehAdmin()){ info('Hanya Admin yang dapat menghapus invoice.','var(--merah)'); return false; }
   try{
+    const {data,error}=await sb.rpc('hapus_invoice',{p_id:id});
+    if(error) throw error;
+    if(!data) return false;
     db.hapusInvoiceIds = [...new Set([...(db.hapusInvoiceIds||[]), id])];
     if(pelanggan) db.hapusPelanggan = [...new Set([...(db.hapusPelanggan||[]), pelanggan])];
-    bersihkanDataTerhapus();
-    await simpanDB();
-    const {error:tombstoneError} = await sb.from('invoice_deletions').upsert({id, pelanggan:pelanggan||null});
-    if(tombstoneError) throw tombstoneError;
-    const {error:deleteError} = await sb.from('invoices').delete().eq('id', id);
-    if(deleteError) throw deleteError;
     await sbDorongPengaturan();
-  }catch(e){ setSbStatus('Gagal menghapus: '+(e.message||e), true); }
+    return true;
+  }catch(e){ setSbStatus('Gagal menghapus: '+(e.message||e), true); return false; }
 }
 async function sbDorongPengaturan(){
-  if(!sb) return;
+  if(!sb || !bolehAdmin()) return;
   try{
     bersihkanDataTerhapus();
     await sb.from('pengaturan').upsert({id:1, data:{bank:db.bank, rekeningList:db.rekeningList, penandatanganList:db.penandatanganList, barangList:db.barangList, hargaPerDapur:db.hargaPerDapur, alamat:db.alamat, telp:db.telp, counter:db.counter}});
@@ -2136,7 +2225,8 @@ function renderStafOnline(){
 async function sbPerbaruiPresence(){
   if(!sbKanal || !sbUser) return;
   const nomor=($('noInv')?.value||'').trim();
-  const aktivitas=idAktif ? `Membuka ${nomor||'invoice'}` : 'Membuat invoice baru';
+  const aktif=idAktif ? db.invoices.find(x=>x.id===idAktif) : null;
+  const aktivitas=aktif ? (statusAlur(aktif)==='draft'?'Mengedit draft':`Membuka ${nomor||'invoice'}`) : 'Membuat draft baru';
   try{ await sbKanal.track({user_id:sbUser.id,nama:namaDariUser(sbUser),aktivitas,online_at:new Date().toISOString()}); }catch(e){}
 }
 function sbLangganan(user){
@@ -2148,10 +2238,10 @@ function sbLangganan(user){
       if(m.eventType === 'DELETE'){
         if(m.old && m.old.id) db.invoices = db.invoices.filter(x=>x.id!==m.old.id);
       }else if(m.new && m.new.data && m.new.data.id){
-        const inv = m.new.data;
+        const inv = normalisasiInvoice(m.new.data);
         if((db.hapusInvoiceIds||[]).includes(inv.id)) return;
         const i = db.invoices.findIndex(x=>x.id===inv.id);
-        if(i>=0){ if((inv.diubah||'') >= (db.invoices[i].diubah||'')) db.invoices[i]=inv; }
+        if(i>=0){ db.invoices[i]=inv; }
         else db.invoices.unshift(inv);
         catatNomor(inv.no||'', inv.tanggal||hariIni());
       }
