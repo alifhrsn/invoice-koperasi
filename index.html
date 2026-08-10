@@ -1524,31 +1524,77 @@ const EJAAN_HARGA={
   saos:'saus',coklat:'cokelat',cokla:'cokelat',cabe:'cabai',telor:'telur',
   filet:'fillet',gilling:'giling',alumunium:'aluminium',besae:'besar',
   mintak:'minyak',ulan:'ulang',sabung:'sabun',pokcoy:'pakcoy',
-  tisue:'tisu',tissue:'tisu',stainles:'stainless'
+  tisue:'tisu',tissue:'tisu',stainles:'stainless',bongglan:'bonggolan',
+  mrh:'merah',pth:'putih',kps:'kupas',ijo:'hijau',knor:'knorr',passeo:'paseo',
+  aqni:'agni',jrgn:'jerigen'
 };
 const SATUAN_HARGA={
   kg:'kg',kilogram:'kg',pck:'pack',pak:'pack',pack:'pack',
   btl:'botol',botol:'botol',ltr:'liter',lt:'liter',liter:'liter',
   gln:'galon',galon:'galon',jrgn:'jerigen',jerigen:'jerigen',
-  ppn:'papan',papa:'papan',papan:'papan',pc:'pcs',pcs:'pcs'
+  ppn:'papan',papa:'papan',papan:'papan',pc:'pcs',pcs:'pcs',buah:'pcs',
+  tabung:'pcs',pch:'pouch',pouch:'pouch'
+};
+const ALIAS_KUNCI_HARGA={
+  'b kupas merah':'bawang kupas merah','b kupas putih':'bawang kupas putih',
+  'ayam telur':'telur','daun kemangi':'kemangi','jeruk lemon':'lemon',
+  'gula jawa':'gula merah','gula putih':'gula pasir','palm sugar':'aren gula',
+  'knorr':'chicken knorr','ff susu':'flag frisian susu','kaldu totole':'totole',
+  'biru segitiga tepung terigu':'segitiga tepung terigu',
+  '10kg agni merk mix roti tepung':'agni roti tepung',
+  '125ml fullcream ultramilk':'125ml fullcream susu ultra',
+  'cuci ekonomi piring sabun':'ekonomi sabun',
+  'kitchen paseo roll towel':'kitchen paseo tisu'
 };
 function normalNamaHarga(v){
-  return normalHargaTeks(v).replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(Boolean).map(k=>EJAAN_HARGA[k]||k).join(' ');
+  const teks=normalHargaTeks(v).replace(/(\d)[.,](?=\d)/g,'$1d').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+  const awal=teks.split(/\s+/).filter(Boolean).map(k=>EJAAN_HARGA[k]||k), hasil=[];
+  for(let i=0;i<awal.length;i++){
+    let k=awal[i];
+    if(/^\d+(?:d\d+)?$/.test(k)&&/^(?:kg|g|gr|gram|ml|l|lt|liter)$/.test(awal[i+1]||'')) k+=awal[++i];
+    k=k.replace(/^(\d+(?:d\d+)?)(?:l|lt|liter)$/,'$1liter')
+       .replace(/^(\d+(?:d\d+)?)(?:g|gr|gram)$/,'$1g');
+    hasil.push(k);
+  }
+  if(hasil.includes('full')&&hasil.includes('cream')) return hasil.filter(k=>k!=='full'&&k!=='cream').concat('fullcream').join(' ');
+  return hasil.join(' ');
 }
-function normalProdukHarga(v){
+function normalProdukHarga(v,unit){
   const normal=normalNamaHarga(v), kata=normal.split(' ').filter(Boolean);
   // Nama minyak bermerek lama memakai campuran 2L/2lt/2liter/12 liter/isi 6 botol.
   // Detail itu digabung bila merek dan satuan transaksinya juga sama.
   const merekMinyak=['tropical','sania'].find(merek=>kata.includes(merek));
   if(kata.includes('minyak')&&merekMinyak) return `minyak ${merekMinyak}`;
-  return normal;
+
+  let hasil=kata.filter(k=>k!=='kemasan');
+  if(unit==='kg'){
+    hasil=hasil.filter(k=>!/^1(?:kg|kilogram)$/.test(k));
+    const posisiKg=hasil.findIndex(k=>k==='kg'||k==='kilogram');
+    if(posisiKg>0&&/^1$/.test(hasil[posisiKg-1])) hasil.splice(posisiKg-1,2);
+  }
+  const namaSatuan={jerigen:'jerigen',botol:'botol',liter:'liter',galon:'galon',papan:'papan',pack:'pack',pouch:'pouch'}[unit];
+  if(namaSatuan) hasil=hasil.filter(k=>k!==namaSatuan);
+
+  const punya=(...x)=>x.every(k=>hasil.includes(k));
+  if(punya('no','merk')) hasil=hasil.filter(k=>k!=='no'&&k!=='merk');
+  if(punya('bonggolan','bukan','bubuk')) hasil=hasil.filter(k=>k!=='bukan'&&k!=='bubuk');
+  if(punya('buncis','muda','segar')) hasil=hasil.filter(k=>!['muda','dan','segar'].includes(k));
+  if(punya('daun','bawang','tangkai','bersih')) hasil=hasil.filter(k=>k!=='tangkai'&&k!=='bersih');
+  if(punya('sereh','tangkai','bersih')) hasil=hasil.filter(k=>k!=='tangkai'&&k!=='bersih');
+  if(punya('lada','bubuk','asli')) hasil=hasil.filter(k=>k!=='asli');
+  if(punya('nanas','utuh')) hasil=hasil.filter(k=>k!=='utuh');
+  if(punya('ayam','giling','fillet')) hasil=hasil.filter(k=>k!=='fillet');
+  if(punya('totole','kaldu')) hasil=hasil.filter(k=>k!=='kaldu');
+  if(punya('aqua','ori')) hasil=hasil.filter(k=>k!=='ori');
+  return hasil.join(' ');
 }
 function normalSatuanHarga(v){
   const unit=normalHargaTeks(v).replace(/[^\p{L}\p{N}]+/gu,'');
   return SATUAN_HARGA[unit]||unit||'-';
 }
-function kataKunciHarga(v){
-  return normalProdukHarga(v).split(' ').filter(Boolean).sort((a,b)=>a.localeCompare(b,'id'));
+function kataKunciHarga(v,unit){
+  const kata=normalProdukHarga(v,unit).split(' ').filter(Boolean).sort((a,b)=>a.localeCompare(b,'id'));
+  return (ALIAS_KUNCI_HARGA[kata.join(' ')]||kata.join(' ')).split(' ').filter(Boolean).sort((a,b)=>a.localeCompare(b,'id'));
 }
 function jarakEjaanHarga(a,b,batas){
   if(a===b) return 0;
@@ -1585,7 +1631,7 @@ function dataHargaItem(){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)||!dapur) return;
     (inv.items||[]).forEach(it=>{
       const harga=Number(it.price)||0, nama=(it.name||'').trim(), unit=normalSatuanHarga(it.unit);
-      const kata=kataKunciHarga(nama), key=`${kata.join(' ')}|${unit}`;
+      const kata=kataKunciHarga(nama,unit), key=`${kata.join(' ')}|${unit}`;
       if(!kata.length||!(harga>0)) return;
       if(!mentah.has(key)) mentah.set(key,{key,kata,unit,poin:[],varian:new Map()});
       const baris=mentah.get(key), namaTampil=nama||normalNamaHarga(nama);
