@@ -1535,12 +1535,20 @@ const SATUAN_HARGA={
 function normalNamaHarga(v){
   return normalHargaTeks(v).replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(Boolean).map(k=>EJAAN_HARGA[k]||k).join(' ');
 }
+function normalProdukHarga(v){
+  const normal=normalNamaHarga(v), kata=normal.split(' ').filter(Boolean);
+  // Nama minyak bermerek lama memakai campuran 2L/2lt/2liter/12 liter/isi 6 botol.
+  // Detail itu digabung bila merek dan satuan transaksinya juga sama.
+  const merekMinyak=['tropical','sania'].find(merek=>kata.includes(merek));
+  if(kata.includes('minyak')&&merekMinyak) return `minyak ${merekMinyak}`;
+  return normal;
+}
 function normalSatuanHarga(v){
   const unit=normalHargaTeks(v).replace(/[^\p{L}\p{N}]+/gu,'');
   return SATUAN_HARGA[unit]||unit||'-';
 }
 function kataKunciHarga(v){
-  return normalNamaHarga(v).split(' ').filter(Boolean).sort((a,b)=>a.localeCompare(b,'id'));
+  return normalProdukHarga(v).split(' ').filter(Boolean).sort((a,b)=>a.localeCompare(b,'id'));
 }
 function jarakEjaanHarga(a,b,batas){
   if(a===b) return 0;
