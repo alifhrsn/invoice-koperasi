@@ -556,7 +556,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
       <button class="btn btn-biru" id="btnTerapkanHarga">Terapkan Periode</button>
       <button class="btn btn-abu" id="btnHargaCsv">⬇ Ekspor CSV</button>
     </div>
-    <div class="kecil" style="margin-bottom:12px">Harga dihitung dari rata-rata harga satuan pada invoice yang sudah diterbitkan. Nama item dengan satuan berbeda dianalisis terpisah.</div>
+    <div class="kecil" style="margin-bottom:12px">Harga dihitung dari rata-rata harga satuan pada invoice yang sudah diterbitkan. Perbedaan kapital, ejaan umum, susunan kata, dan typo kecil otomatis digabung; satuan yang benar-benar berbeda tetap dianalisis terpisah.</div>
     <div id="isiHarga"></div>
   </div>
 </dialog>
@@ -1520,25 +1520,87 @@ $('btnRekapCetak').addEventListener('click', ()=>{
 function normalHargaTeks(v){
   return String(v||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id-ID');
 }
-function kunciHargaItem(it){
-  const nama=normalHargaTeks(it?.name), unit=normalHargaTeks(it?.unit)||'-';
-  return nama ? `${nama}|${unit}` : '';
+const EJAAN_HARGA={
+  saos:'saus',coklat:'cokelat',cokla:'cokelat',cabe:'cabai',telor:'telur',
+  filet:'fillet',gilling:'giling',alumunium:'aluminium',besae:'besar',
+  mintak:'minyak',ulan:'ulang',sabung:'sabun',pokcoy:'pakcoy',
+  tisue:'tisu',tissue:'tisu',stainles:'stainless'
+};
+const SATUAN_HARGA={
+  kg:'kg',kilogram:'kg',pck:'pack',pak:'pack',pack:'pack',
+  btl:'botol',botol:'botol',ltr:'liter',lt:'liter',liter:'liter',
+  gln:'galon',galon:'galon',jrgn:'jerigen',jerigen:'jerigen',
+  ppn:'papan',papa:'papan',papan:'papan',pc:'pcs',pcs:'pcs'
+};
+function normalNamaHarga(v){
+  return normalHargaTeks(v).replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(Boolean).map(k=>EJAAN_HARGA[k]||k).join(' ');
+}
+function normalSatuanHarga(v){
+  const unit=normalHargaTeks(v).replace(/[^\p{L}\p{N}]+/gu,'');
+  return SATUAN_HARGA[unit]||unit||'-';
+}
+function kataKunciHarga(v){
+  return normalNamaHarga(v).split(' ').filter(Boolean).sort((a,b)=>a.localeCompare(b,'id'));
+}
+function jarakEjaanHarga(a,b,batas){
+  if(a===b) return 0;
+  if(Math.abs(a.length-b.length)>batas) return batas+1;
+  let sebelum=Array.from({length:b.length+1},(_,i)=>i);
+  for(let i=1;i<=a.length;i++){
+    const kini=[i];
+    let minimum=kini[0];
+    for(let j=1;j<=b.length;j++){
+      kini[j]=Math.min(kini[j-1]+1,sebelum[j]+1,sebelum[j-1]+(a[i-1]===b[j-1]?0:1));
+      minimum=Math.min(minimum,kini[j]);
+    }
+    if(minimum>batas) return batas+1;
+    sebelum=kini;
+  }
+  return sebelum[b.length];
+}
+function kataHargaMirip(a,b){
+  if(a===b) return true;
+  if(/^\d+$/.test(a)||/^\d+$/.test(b)) return false;
+  const panjang=Math.max(a.length,b.length);
+  if(panjang<5) return false;
+  const batas=panjang>=10?2:1;
+  return jarakEjaanHarga(a,b,batas)<=batas;
+}
+function namaHargaMirip(a,b){
+  return a.length===b.length&&a.every((kata,i)=>kataHargaMirip(kata,b[i]));
 }
 function dataHargaItem(){
-  const daftar=new Map();
+  const mentah=new Map();
   invoiceTerbit().forEach(inv=>{
     const tanggal=String(inv.tanggal||'').slice(0,10);
     const dapur=(inv.pelanggan||'').trim();
     if(!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)||!dapur) return;
     (inv.items||[]).forEach(it=>{
-      const harga=Number(it.price)||0, key=kunciHargaItem(it);
-      if(!key||!(harga>0)) return;
-      const nama=(it.name||'').trim(), unit=(it.unit||'').trim()||'-';
-      if(!daftar.has(key)) daftar.set(key,{key,nama,unit,poin:[]});
-      daftar.get(key).poin.push({tanggal,dapur,harga,no:inv.no||'',qty:parseFloat(it.qty)||0});
+      const harga=Number(it.price)||0, nama=(it.name||'').trim(), unit=normalSatuanHarga(it.unit);
+      const kata=kataKunciHarga(nama), key=`${kata.join(' ')}|${unit}`;
+      if(!kata.length||!(harga>0)) return;
+      if(!mentah.has(key)) mentah.set(key,{key,kata,unit,poin:[],varian:new Map()});
+      const baris=mentah.get(key), namaTampil=nama||normalNamaHarga(nama);
+      baris.poin.push({tanggal,dapur,harga,no:inv.no||'',qty:parseFloat(it.qty)||0});
+      baris.varian.set(namaTampil,(baris.varian.get(namaTampil)||0)+1);
     });
   });
-  return [...daftar.values()].sort((a,b)=>a.nama.localeCompare(b.nama,'id')||a.unit.localeCompare(b.unit,'id'));
+  const grup=[];
+  [...mentah.values()].sort((a,b)=>a.key.localeCompare(b.key,'id')).forEach(item=>{
+    const sama=grup.find(g=>g.unit===item.unit&&namaHargaMirip(g.kata,item.kata));
+    if(!sama){ grup.push(item); return; }
+    sama.poin.push(...item.poin);
+    item.varian.forEach((jumlah,nama)=>sama.varian.set(nama,(sama.varian.get(nama)||0)+jumlah));
+  });
+  return grup.map(g=>{
+    const varian=[...g.varian.entries()].sort((a,b)=>{
+      const bakuA=normalHargaTeks(a[0])===normalNamaHarga(a[0])?1:0;
+      const bakuB=normalHargaTeks(b[0])===normalNamaHarga(b[0])?1:0;
+      return bakuB-bakuA||b[1]-a[1]||a[0].localeCompare(b[0],'id');
+    });
+    const nama=varian[0]?.[0]||g.kata.join(' '), aliases=varian.map(x=>x[0]);
+    return {...g,key:`${g.kata.join(' ')}|${g.unit}`,nama,aliases};
+  }).sort((a,b)=>a.nama.localeCompare(b.nama,'id')||a.unit.localeCompare(b.unit,'id'));
 }
 function batasBulan(kb){
   const [y,m]=kb.split('-').map(Number);
@@ -1559,7 +1621,7 @@ function aturPeriodeHargaDefault(){
 }
 function isiPilihanHargaItem(){
   const sel=$('hargaItem'), data=dataHargaItem(), lama=sel.value;
-  sel.innerHTML=data.length?data.map(x=>`<option value="${esc(x.key)}">${esc(x.nama)} · ${esc(x.unit)}</option>`).join(''):'<option value="">(belum ada data harga)</option>';
+  sel.innerHTML=data.length?data.map(x=>`<option value="${esc(x.key)}">${esc(x.nama)} · ${esc(x.unit)}${x.aliases.length>1?` — ${x.aliases.length} variasi digabung`:''}</option>`).join(''):'<option value="">(belum ada data harga)</option>';
   if(data.some(x=>x.key===lama)) sel.value=lama;
   else{
     const telur=data.find(x=>normalHargaTeks(x.nama)==='telur') || data.find(x=>normalHargaTeks(x.nama).includes('telur'));
@@ -1605,7 +1667,9 @@ function renderAnalisisHarga(){
   if(!d){ wadah.innerHTML='<div class="kosong">Belum ada item dengan harga pada invoice yang diterbitkan.</div>'; return; }
   if(!d.A.poin.length&&!d.B.poin.length){ wadah.innerHTML='<div class="kosong">Tidak ada data harga item ini pada kedua periode.</div>'; return; }
   const beda=teksSelisihHarga(d.A.rata,d.B.rata), kelas=kelasSelisihHarga(d.A.rata,d.B.rata);
-  let h=`<div class="ringkas-harga">
+  const contohAlias=d.item.aliases.slice(0,5).join(', '), sisaAlias=d.item.aliases.length-5;
+  let h=d.item.aliases.length>1?`<div class="kecil" style="margin:-2px 0 12px"><b>Ejaan yang digabung:</b> ${esc(contohAlias)}${sisaAlias>0?` (+${sisaAlias} lainnya)`:''}</div>`:'';
+  h+=`<div class="ringkas-harga">
     <div class="kartu-harga"><div class="kecil">Periode A · ${esc(tglIndo(d.r.a0))}–${esc(tglIndo(d.r.a1))}</div><span class="nilai">${d.A.rata==null?'—':rupiah(Math.round(d.A.rata))}</span><div class="kecil">${d.A.poin.length} pencatatan harga</div></div>
     <div class="kartu-harga"><div class="kecil">Periode B · ${esc(tglIndo(d.r.b0))}–${esc(tglIndo(d.r.b1))}</div><span class="nilai">${d.B.rata==null?'—':rupiah(Math.round(d.B.rata))}</span><div class="kecil">${d.B.poin.length} pencatatan harga</div></div>
     <div class="kartu-harga"><div class="kecil">Perubahan rata-rata</div><span class="nilai ${kelas}">${esc(beda)}</span><div class="kecil">B dibanding A · semua dapur</div></div>
