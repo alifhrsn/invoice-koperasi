@@ -1251,31 +1251,40 @@ function ambilForm(){
 }
 function aturFormWorkflow(inv){
   const diterbitkan = statusAlur(inv)==='issued';
+  const sumberRevisi = !diterbitkan && revisionAktif ? db.invoices.find(x=>x.id===revisionAktif) : null;
   const notice=$('workflowNotice');
   notice.className='workflow-notice '+(diterbitkan?'issued':'draft');
   notice.textContent=diterbitkan
     ? '🔒 Diterbitkan — isi invoice terkunci. Gunakan Revisi untuk membuat perubahan.'
-    : '📝 Draft — nomor resmi diberikan saat diterbitkan.';
+    : sumberRevisi
+      ? '✏️ Revisi '+sumberRevisi.no+' — saat diterapkan, nomor invoice tetap sama.'
+      : '📝 Draft — nomor resmi diberikan saat diterbitkan.';
   ['tgl','pelanggan','bank','an','rek','ttdNama','catatan','pilihRek'].forEach(id=>{ if($(id)) $(id).disabled=diterbitkan; });
   $('tbodyBarang').querySelectorAll('input').forEach(el=>el.disabled=diterbitkan);
   $('tbodyBarang').querySelectorAll('.hapus-baris').forEach(el=>el.disabled=diterbitkan);
   $('btnTambah').disabled=diterbitkan;
   $('btnSimpan').hidden=diterbitkan;
   $('btnTerbitkan').hidden=diterbitkan;
+  if(!diterbitkan){
+    $('btnSimpan').textContent=sumberRevisi?'💾 Simpan Draft Revisi':'💾 Simpan Draft';
+    $('btnTerbitkan').textContent=sumberRevisi?'✓ Terapkan Revisi & Kunci':'✓ Terbitkan & Kunci';
+  }
 }
 async function simpanInvoice(diam){
   let inv = ambilForm();
+  const sumberRevisi = revisionAktif ? db.invoices.find(x=>x.id===revisionAktif) : null;
   if(!sb){ if(!diam) info('Draft harus disimpan saat online agar dapat dilanjutkan staf lain.','var(--merah)'); return false; }
   inv.workflow_status='draft'; inv.no='';
   const tombol=$('btnSimpan');
   tombol.disabled=true; tombol.textContent='Menyimpan…';
   try{ inv=await sbSimpanDraft(inv); }
   catch(e){ if(!diam) info('Gagal menyimpan draft: '+(e.message||e),'var(--merah)'); return false; }
-  finally{ tombol.disabled=false; tombol.textContent='💾 Simpan Draft'; }
+  finally{ tombol.disabled=false; tombol.textContent=sumberRevisi?'💾 Simpan Draft Revisi':'💾 Simpan Draft'; }
   await simpanInvoiceLokal(inv);
-  $('noInv').value='DRAFT — belum diterbitkan';
+  revisionAktif=inv.revision_of||revisionAktif;
+  $('noInv').value=sumberRevisi?.no||'DRAFT — belum diterbitkan';
   aturFormWorkflow(inv);
-  if(!diam) info('Draft tersimpan ✓');
+  if(!diam) info(sumberRevisi?'Draft revisi '+sumberRevisi.no+' tersimpan ✓':'Draft tersimpan ✓');
   return true;
 }
 async function simpanInvoiceLokal(inv){
@@ -1305,19 +1314,23 @@ async function terbitkanInvoice(diam){
   const aktif=idAktif ? db.invoices.find(x=>x.id===idAktif) : null;
   if(aktif && statusAlur(aktif)==='issued') return aktif;
   let inv=ambilForm();
+  const idDraft=inv.id;
+  const idSumberRevisi=inv.revision_of||null;
   if(inv.items.length===0){ if(!diam) info('Belum ada barang.','var(--merah)'); return null; }
   if(!sb){ if(!diam) info('Harus online untuk menerbitkan dan memperoleh nomor resmi.','var(--merah)'); return null; }
   const tombol=$('btnTerbitkan');
   tombol.disabled=true; tombol.textContent='Menerbitkan…';
   try{
     inv=await sbTerbitkanInvoice(inv);
+    if(idSumberRevisi && idDraft!==inv.id) db.invoices=db.invoices.filter(x=>x.id!==idDraft);
     $('noInv').value=inv.no;
     await simpanInvoiceLokal(inv);
+    revisionAktif=null;
     aturFormWorkflow(inv); perbarui();
-    if(!diam) info('Invoice '+inv.no+' diterbitkan dan dikunci ✓');
+    if(!diam) info(idSumberRevisi?'Revisi '+inv.no+' diterapkan; nomor tetap sama ✓':'Invoice '+inv.no+' diterbitkan dan dikunci ✓');
     return inv;
   }catch(e){ if(!diam) info('Gagal menerbitkan: '+(e.message||e),'var(--merah)'); return null; }
-  finally{ tombol.disabled=false; tombol.textContent='✓ Terbitkan & Kunci'; }
+  finally{ tombol.disabled=false; tombol.textContent=idSumberRevisi?'✓ Terapkan Revisi & Kunci':'✓ Terbitkan & Kunci'; }
 }
 $('btnTerbitkan').addEventListener('click', ()=>terbitkanInvoice(false));
 
@@ -1368,9 +1381,9 @@ $('isiRiwayat').addEventListener('click', async e=>{
   if(b.revisi){
     const sumber=db.invoices.find(x=>x.id===b.revisi);
     const s=JSON.parse(JSON.stringify(sumber));
-    s.id=null; s.no=''; s.workflow_status='draft'; s.revision_of=sumber.id;
+    s.id=null; s.workflow_status='draft'; s.revision_of=sumber.id;
     isiForm(s,true); $('dlgRiwayat').close();
-    info('Draft revisi dibuat. Simpan draft atau terbitkan bila sudah siap.');
+    info('Revisi '+sumber.no+' dibuka. Nomor dan tanggal invoice akan tetap sama.');
   }
   if(b.hapus){
     if(!bolehAdmin()){ info('Hanya Admin yang dapat menghapus invoice.','var(--merah)'); return; }
@@ -1384,7 +1397,7 @@ $('isiRiwayat').addEventListener('click', async e=>{
 $('btnRiwayat').addEventListener('click', ()=>{ renderRiwayat(); $('dlgRiwayat').showModal(); });
 $('btnTutupRiwayat').addEventListener('click', ()=>$('dlgRiwayat').close());
 
-const LABEL_AKTIVITAS={draft_created:'Draft dibuat',draft_updated:'Draft diperbarui',issued:'Invoice diterbitkan',payment_status_changed:'Status pembayaran diubah',deleted:'Invoice dihapus',role_changed:'Peran staf diubah'};
+const LABEL_AKTIVITAS={draft_created:'Draft dibuat',draft_updated:'Draft diperbarui',issued:'Invoice diterbitkan',revised:'Invoice direvisi',payment_status_changed:'Status pembayaran diubah',deleted:'Invoice dihapus',role_changed:'Peran staf diubah'};
 async function renderAktivitas(){
   const wadah=$('isiAktivitas');
   wadah.innerHTML='<div class="kosong">Memuat aktivitas…</div>';
@@ -1956,8 +1969,9 @@ $('dashPeriode').addEventListener('change', renderDashboard);
 function isiForm(inv, nomorBaru){
   idAktif = nomorBaru ? null : inv.id;
   revisionAktif = inv.revision_of || null;
-  $('tgl').value = nomorBaru ? hariIni() : inv.tanggal;
-  $('noInv').value = nomorBaru || statusAlur(inv)==='draft' ? 'DRAFT — belum diterbitkan' : inv.no;
+  const sumberRevisi = revisionAktif ? db.invoices.find(x=>x.id===revisionAktif) : null;
+  $('tgl').value = sumberRevisi?.tanggal || (nomorBaru ? hariIni() : inv.tanggal);
+  $('noInv').value = sumberRevisi?.no || (nomorBaru || statusAlur(inv)==='draft' ? 'DRAFT — belum diterbitkan' : inv.no);
   $('pelanggan').value = inv.pelanggan||'';
   $('bank').value = inv.bank?.bank||'';
   $('an').value = inv.bank?.an||'';
