@@ -158,6 +158,28 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 .item-riwayat .nom{font-family:var(--font-mono);font-weight:600;color:var(--navy)}
 .kosong{text-align:center;color:var(--abu);padding:24px 0;font-size:13px}
 
+/* ===== ANALISIS HARGA ===== */
+#dlgHarga{width:min(1040px,96vw)}
+.filter-harga{display:grid;grid-template-columns:minmax(190px,1.35fr) repeat(4,minmax(135px,1fr));gap:10px;align-items:end;margin-bottom:12px}
+.filter-harga input,.filter-harga select,.filter-harga .btn{width:100%;min-width:0}
+.ringkas-harga{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.kartu-harga{border:1px solid var(--garis);border-radius:10px;padding:12px;background:#fff;min-width:0}
+.kartu-harga .nilai{display:block;font-size:19px;color:var(--navy);font-weight:800;font-variant-numeric:tabular-nums;margin-top:3px}
+.grafik-harga{display:grid;gap:12px}
+.grafik-dapur{border-top:1px solid var(--garis);padding-top:10px}
+.grafik-dapur:first-child{border-top:0;padding-top:0}
+.grafik-label{display:flex;justify-content:space-between;gap:10px;font-size:12px;font-weight:700;margin-bottom:6px}
+.batang-harga{display:grid;grid-template-columns:76px minmax(0,1fr) 112px;gap:8px;align-items:center;margin:5px 0;font-size:11.5px}
+.batang-track{height:13px;border-radius:99px;background:#EDF1F7;overflow:hidden}
+.batang-isi{height:100%;min-width:2px;border-radius:99px}
+.batang-a{background:#7A8DAF}.batang-b{background:var(--biru)}
+.harga-naik{color:#B42318}.harga-turun{color:#177B3E}.harga-tetap{color:var(--abu)}
+.tabel-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tabel-harga{width:100%;border-collapse:collapse;font-size:12.5px;min-width:680px}
+.tabel-harga th,.tabel-harga td{padding:8px;border-top:1px solid var(--garis);text-align:right;font-variant-numeric:tabular-nums}
+.tabel-harga th{color:var(--abu);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.tabel-harga th:first-child,.tabel-harga td:first-child{text-align:left}
+
 /* ===== RESPONSIF: TABLET & HP ===== */
 @media(max-width:760px){
   .topbar{padding:10px;gap:8px}
@@ -211,6 +233,10 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   .item-riwayat .btn{flex:1;min-height:42px}
   .dlg-kepala{padding:10px 12px}
   .dlg-isi{padding:10px}
+  .filter-harga{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .filter-harga>div:first-child{grid-column:1/-1}
+  .ringkas-harga{grid-template-columns:1fr}
+  .batang-harga{grid-template-columns:68px minmax(0,1fr) 96px;gap:6px}
 }
 
 /* ===== CETAK ===== */
@@ -271,6 +297,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <button class="btn btn-biru" id="btnRiwayat">Riwayat</button>
   <button class="btn btn-biru" id="btnAktivitas">Aktivitas</button>
   <button class="btn btn-biru" id="btnRekap">📊 Rekap Dapur</button>
+  <button class="btn btn-biru" id="btnHarga">📉 Analisis Harga</button>
   <button class="btn btn-biru" id="btnPengaturan" title="Pengaturan">⚙ Pengaturan</button>
   <button class="btn btn-biru" id="btnKelolaStaf" hidden>👥 Kelola Staf</button>
   <button class="btn btn-bahaya" id="btnKeluar" hidden style="color:#fff;border-color:rgba(255,255,255,.65)">Keluar</button>
@@ -505,6 +532,32 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
       <button class="btn btn-abu" id="btnRekapCsv">⬇ Ekspor CSV</button>
     </div>
     <div id="isiRekap"></div>
+  </div>
+</dialog>
+
+<!-- ============ ANALISIS HARGA ITEM ============ -->
+<dialog id="dlgHarga">
+  <div class="dlg-kepala">
+    <b>📉 Perbandingan Harga Item</b>
+    <button class="btn btn-putih" id="btnTutupHarga">Tutup</button>
+  </div>
+  <div class="dlg-isi">
+    <div class="filter-harga">
+      <div>
+        <label for="hargaItem">Item dan Satuan</label>
+        <select id="hargaItem"></select>
+      </div>
+      <div><label for="hargaMulaiA">Periode A mulai</label><input id="hargaMulaiA" type="date"></div>
+      <div><label for="hargaSelesaiA">Periode A selesai</label><input id="hargaSelesaiA" type="date"></div>
+      <div><label for="hargaMulaiB">Periode B mulai</label><input id="hargaMulaiB" type="date"></div>
+      <div><label for="hargaSelesaiB">Periode B selesai</label><input id="hargaSelesaiB" type="date"></div>
+    </div>
+    <div class="aksi" style="margin:0 0 12px">
+      <button class="btn btn-biru" id="btnTerapkanHarga">Terapkan Periode</button>
+      <button class="btn btn-abu" id="btnHargaCsv">⬇ Ekspor CSV</button>
+    </div>
+    <div class="kecil" style="margin-bottom:12px">Harga dihitung dari rata-rata harga satuan pada invoice yang sudah diterbitkan. Nama item dengan satuan berbeda dianalisis terpisah.</div>
+    <div id="isiHarga"></div>
   </div>
 </dialog>
 
@@ -1463,6 +1516,129 @@ $('btnRekapCetak').addEventListener('click', ()=>{
   w.document.write(h); w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
 });
 
+/* ================== ANALISIS HARGA ANTAR DAPUR ================== */
+function normalHargaTeks(v){
+  return String(v||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id-ID');
+}
+function kunciHargaItem(it){
+  const nama=normalHargaTeks(it?.name), unit=normalHargaTeks(it?.unit)||'-';
+  return nama ? `${nama}|${unit}` : '';
+}
+function dataHargaItem(){
+  const daftar=new Map();
+  invoiceTerbit().forEach(inv=>{
+    const tanggal=String(inv.tanggal||'').slice(0,10);
+    const dapur=(inv.pelanggan||'').trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)||!dapur) return;
+    (inv.items||[]).forEach(it=>{
+      const harga=Number(it.price)||0, key=kunciHargaItem(it);
+      if(!key||!(harga>0)) return;
+      const nama=(it.name||'').trim(), unit=(it.unit||'').trim()||'-';
+      if(!daftar.has(key)) daftar.set(key,{key,nama,unit,poin:[]});
+      daftar.get(key).poin.push({tanggal,dapur,harga,no:inv.no||'',qty:parseFloat(it.qty)||0});
+    });
+  });
+  return [...daftar.values()].sort((a,b)=>a.nama.localeCompare(b.nama,'id')||a.unit.localeCompare(b.unit,'id'));
+}
+function batasBulan(kb){
+  const [y,m]=kb.split('-').map(Number);
+  const akhir=new Date(Date.UTC(y,m,0)).getUTCDate();
+  return {mulai:`${y}-${String(m).padStart(2,'0')}-01`,selesai:`${y}-${String(m).padStart(2,'0')}-${String(akhir).padStart(2,'0')}`};
+}
+function bulanSebelumnya(kb){
+  const [y,m]=kb.split('-').map(Number), d=new Date(Date.UTC(y,m-2,1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+}
+function aturPeriodeHargaDefault(){
+  const bulan=[...new Set(invoiceTerbit().map(x=>(x.tanggal||'').slice(0,7)).filter(x=>/^\d{4}-\d{2}$/.test(x)))].sort();
+  const kbB=bulan[bulan.length-1]||hariIni().slice(0,7);
+  const kbA=bulan.length>1?bulan[bulan.length-2]:bulanSebelumnya(kbB);
+  const a=batasBulan(kbA), b=batasBulan(kbB);
+  $('hargaMulaiA').value=a.mulai; $('hargaSelesaiA').value=a.selesai;
+  $('hargaMulaiB').value=b.mulai; $('hargaSelesaiB').value=b.selesai;
+}
+function isiPilihanHargaItem(){
+  const sel=$('hargaItem'), data=dataHargaItem(), lama=sel.value;
+  sel.innerHTML=data.length?data.map(x=>`<option value="${esc(x.key)}">${esc(x.nama)} · ${esc(x.unit)}</option>`).join(''):'<option value="">(belum ada data harga)</option>';
+  if(data.some(x=>x.key===lama)) sel.value=lama;
+  else{
+    const telur=data.find(x=>normalHargaTeks(x.nama)==='telur') || data.find(x=>normalHargaTeks(x.nama).includes('telur'));
+    if(telur) sel.value=telur.key;
+  }
+}
+function rataHarga(poin){ return poin.length?poin.reduce((s,x)=>s+x.harga,0)/poin.length:null; }
+function dataPeriodeHarga(item,mulai,selesai){
+  const poin=(item?.poin||[]).filter(x=>x.tanggal>=mulai&&x.tanggal<=selesai);
+  const perDapur=new Map();
+  poin.forEach(x=>{ if(!perDapur.has(x.dapur)) perDapur.set(x.dapur,[]); perDapur.get(x.dapur).push(x); });
+  return {poin,rata:rataHarga(poin),perDapur};
+}
+function selisihHarga(a,b){
+  if(a==null||b==null) return {nilai:null,persen:null};
+  return {nilai:b-a,persen:a?((b-a)/a*100):null};
+}
+function teksSelisihHarga(a,b){
+  const d=selisihHarga(a,b); if(d.nilai==null) return 'Data belum lengkap';
+  const arah=d.nilai>0?'Naik':d.nilai<0?'Turun':'Tetap';
+  const pct=d.persen==null?'':` (${d.persen>0?'+':''}${d.persen.toLocaleString('id-ID',{maximumFractionDigits:1})}%)`;
+  return `${arah} ${rupiah(Math.abs(Math.round(d.nilai)))}${pct}`;
+}
+function kelasSelisihHarga(a,b){ return a==null||b==null||a===b?'harga-tetap':(b>a?'harga-naik':'harga-turun'); }
+function rentangHargaValid(){
+  const r={a0:$('hargaMulaiA').value,a1:$('hargaSelesaiA').value,b0:$('hargaMulaiB').value,b1:$('hargaSelesaiB').value};
+  return r.a0&&r.a1&&r.b0&&r.b1&&r.a0<=r.a1&&r.b0<=r.b1?r:null;
+}
+function hitungAnalisisHarga(){
+  const item=dataHargaItem().find(x=>x.key===$('hargaItem').value), r=rentangHargaValid();
+  if(!item||!r) return null;
+  const A=dataPeriodeHarga(item,r.a0,r.a1), B=dataPeriodeHarga(item,r.b0,r.b1);
+  const namaDapur=[...new Set([...A.perDapur.keys(),...B.perDapur.keys()])].sort((a,b)=>a.localeCompare(b,'id'));
+  const baris=namaDapur.map(nama=>{
+    const pa=A.perDapur.get(nama)||[], pb=B.perDapur.get(nama)||[];
+    return {nama,a:rataHarga(pa),b:rataHarga(pb),nA:pa.length,nB:pb.length};
+  });
+  return {item,r,A,B,baris};
+}
+function renderAnalisisHarga(){
+  const wadah=$('isiHarga'), d=hitungAnalisisHarga();
+  if(!rentangHargaValid()){ wadah.innerHTML='<div class="kosong">Tanggal awal harus lebih kecil atau sama dengan tanggal akhir.</div>'; return; }
+  if(!d){ wadah.innerHTML='<div class="kosong">Belum ada item dengan harga pada invoice yang diterbitkan.</div>'; return; }
+  if(!d.A.poin.length&&!d.B.poin.length){ wadah.innerHTML='<div class="kosong">Tidak ada data harga item ini pada kedua periode.</div>'; return; }
+  const beda=teksSelisihHarga(d.A.rata,d.B.rata), kelas=kelasSelisihHarga(d.A.rata,d.B.rata);
+  let h=`<div class="ringkas-harga">
+    <div class="kartu-harga"><div class="kecil">Periode A · ${esc(tglIndo(d.r.a0))}–${esc(tglIndo(d.r.a1))}</div><span class="nilai">${d.A.rata==null?'—':rupiah(Math.round(d.A.rata))}</span><div class="kecil">${d.A.poin.length} pencatatan harga</div></div>
+    <div class="kartu-harga"><div class="kecil">Periode B · ${esc(tglIndo(d.r.b0))}–${esc(tglIndo(d.r.b1))}</div><span class="nilai">${d.B.rata==null?'—':rupiah(Math.round(d.B.rata))}</span><div class="kecil">${d.B.poin.length} pencatatan harga</div></div>
+    <div class="kartu-harga"><div class="kecil">Perubahan rata-rata</div><span class="nilai ${kelas}">${esc(beda)}</span><div class="kecil">B dibanding A · semua dapur</div></div>
+  </div>`;
+  if(d.baris.length){
+    const max=Math.max(1,...d.baris.flatMap(x=>[x.a||0,x.b||0]));
+    h+=`<div class="panel" style="margin-bottom:12px"><h2>Grafik Harga Antar Dapur · ${esc(d.item.nama)} (${esc(d.item.unit)})</h2><div class="grafik-harga">`;
+    d.baris.forEach(x=>{
+      h+=`<div class="grafik-dapur"><div class="grafik-label"><span>${esc(x.nama)}</span><span class="${kelasSelisihHarga(x.a,x.b)}">${esc(teksSelisihHarga(x.a,x.b))}</span></div>
+        <div class="batang-harga"><span>Periode A</span><div class="batang-track"><div class="batang-isi batang-a" style="width:${x.a==null?0:Math.max(1,x.a/max*100)}%"></div></div><b>${x.a==null?'—':rupiah(Math.round(x.a))}</b></div>
+        <div class="batang-harga"><span>Periode B</span><div class="batang-track"><div class="batang-isi batang-b" style="width:${x.b==null?0:Math.max(1,x.b/max*100)}%"></div></div><b>${x.b==null?'—':rupiah(Math.round(x.b))}</b></div></div>`;
+    });
+    h+='</div></div>';
+    h+=`<div class="panel"><h2>Tabel Perbandingan</h2><div class="tabel-scroll"><table class="tabel-harga"><thead><tr><th>Dapur</th><th>Harga A</th><th>Data A</th><th>Harga B</th><th>Data B</th><th>Perubahan</th></tr></thead><tbody>`;
+    d.baris.forEach(x=>{ h+=`<tr><td>${esc(x.nama)}</td><td>${x.a==null?'—':rupiah(Math.round(x.a))}</td><td>${x.nA}</td><td>${x.b==null?'—':rupiah(Math.round(x.b))}</td><td>${x.nB}</td><td class="${kelasSelisihHarga(x.a,x.b)}">${esc(teksSelisihHarga(x.a,x.b))}</td></tr>`; });
+    h+='</tbody></table></div></div>';
+  }
+  wadah.innerHTML=h;
+}
+function csvHarga(v){ const s=String(v??''); return /[;"\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }
+function eksporAnalisisHarga(){
+  const d=hitungAnalisisHarga(); if(!d) return;
+  let csv=`PERBANDINGAN HARGA;${csvHarga(d.item.nama)};${csvHarga(d.item.unit)}\nPeriode A;${d.r.a0};${d.r.a1}\nPeriode B;${d.r.b0};${d.r.b1}\n\nDapur;Harga A;Jumlah Data A;Harga B;Jumlah Data B;Selisih;Persen\n`;
+  d.baris.forEach(x=>{ const s=selisihHarga(x.a,x.b); csv+=`${csvHarga(x.nama)};${x.a==null?'':Math.round(x.a)};${x.nA};${x.b==null?'':Math.round(x.b)};${x.nB};${s.nilai==null?'':Math.round(s.nilai)};${s.persen==null?'':s.persen.toFixed(2)}\n`; });
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}), a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`perbandingan-harga-${d.item.nama.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+}
+$('btnHarga').addEventListener('click',()=>{ isiPilihanHargaItem(); aturPeriodeHargaDefault(); renderAnalisisHarga(); $('dlgHarga').showModal(); });
+$('btnTutupHarga').addEventListener('click',()=>$('dlgHarga').close());
+$('btnTerapkanHarga').addEventListener('click',renderAnalisisHarga);
+$('hargaItem').addEventListener('change',renderAnalisisHarga);
+$('btnHargaCsv').addEventListener('click',eksporAnalisisHarga);
+
 /* ================== DASHBOARD ================== */
 function daftarPeriode(){
   const set = new Set();
@@ -2249,6 +2425,7 @@ function sbLangganan(user){
       }
       await simpanDB(); isiDatalistPelanggan();
       if($('dlgRiwayat').open) renderRiwayat();
+      if($('dlgHarga').open){ isiPilihanHargaItem(); renderAnalisisHarga(); }
       // bila form saat ini invoice BARU dengan nomor otomatis, segarkan nomornya
       // supaya tidak bentrok dengan data yang baru masuk dari perangkat lain
       if(!idAktif && /^INV\/KMS\//.test($('noInv').value)){
@@ -2265,6 +2442,7 @@ function sbLangganan(user){
       bersihkanDataTerhapus();
       await simpanDB(); isiDatalistPelanggan();
       if($('dlgRiwayat').open) renderRiwayat();
+      if($('dlgHarga').open){ isiPilihanHargaItem(); renderAnalisisHarga(); }
     })
     .subscribe(async status=>{
       if(status==='SUBSCRIBED') await sbPerbaruiPresence();
