@@ -72,11 +72,14 @@ table.tabel-input input{padding:7px 8px;font-size:13px}
 .kol-qty{width:60px}.kol-sat{width:68px}.kol-harga{width:94px}.kol-x{width:34px}
 .angka{text-align:right;font-family:var(--font-mono)}
 .item-nama-wrap{position:relative}
-.saran-barang{position:absolute;z-index:80;left:0;right:0;top:calc(100% + 4px);max-height:240px;overflow:auto;background:#fff;border:1px solid #B8C7DB;border-radius:9px;box-shadow:0 10px 28px rgba(16,24,40,.2)}
+.saran-barang{position:absolute;z-index:80;left:0;right:auto;top:calc(100% + 4px);width:min(360px,calc(100vw - 32px));max-height:300px;overflow:auto;background:#fff;border:1px solid #B8C7DB;border-radius:9px;box-shadow:0 10px 28px rgba(16,24,40,.2)}
 .saran-barang[hidden],.harga-pasar-input[hidden]{display:none}
 .saran-barang button{display:block;width:100%;border:0;border-top:1px solid #EDF1F7;background:#fff;color:var(--tinta);padding:9px 10px;text-align:left;font-family:var(--font-ui);font-size:12.5px;cursor:pointer}
 .saran-barang button:first-child{border-top:0}.saran-barang button:hover,.saran-barang button:focus{background:#EDF5FF;outline:none}
 .saran-barang small{display:block;color:var(--abu);margin-top:2px}
+.saran-harga-pasar{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:6px!important}
+.saran-harga-pasar span{display:block;min-width:0;padding:4px 5px;border-radius:5px;background:#F2F8FF;border:1px solid #D8E7F7;font-size:9.5px;line-height:1.35}
+.saran-harga-pasar strong{display:block;color:var(--navy);white-space:nowrap;font-size:10px}
 .harga-pasar-input{margin-top:6px;padding:8px 9px;border:1px solid #B9D5F2;border-radius:8px;background:#F2F8FF;font-size:10.5px;line-height:1.45;color:var(--tinta)}
 .harga-pasar-input b{display:block;color:var(--navy);margin-bottom:3px;font-size:11px}
 .harga-pasar-input .pasar-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
@@ -959,8 +962,13 @@ function tampilkanSaranBarang(input){
   const saran=daftarNamaAutocompleteBarang(input.value);
   if(!saran.length){ box.hidden=true; box.innerHTML=''; input.setAttribute('aria-expanded','false'); return; }
   box.innerHTML=saran.map(nama=>{
-    const punyaPasar=!!kunciPasarDariNama(nama);
-    return `<button type="button" role="option" data-saran-barang="${esc(nama)}" data-i="${esc(input.dataset.i)}"><b>${esc(nama)}</b>${punyaPasar?'<small>Harga pasar resmi tersedia</small>':''}</button>`;
+    const key=kunciPasarDariNama(nama), data=key?DAPUR_PASAR.map(dapur=>({dapur,harga:hargaPasarTerbaru(dapur,key)})):[];
+    let pasar='';
+    if(key&&data.some(x=>x.harga)){
+      const unit=data.find(x=>x.harga)?.harga?.unit||'';
+      pasar=`<small>Harga pasar resmi${unit?` per ${esc(unit)}`:''}:</small><small class="saran-harga-pasar">${data.map(x=>`<span>${esc(LABEL_DAPUR_PASAR[x.dapur].split(' · ')[0])}<strong>${x.harga?rupiah(Math.round(x.harga.nilai)):'—'}</strong></span>`).join('')}</small>`;
+    }else if(key&&hargaPasarMemuat){ pasar='<small>Sedang memuat harga pasar resmi…</small>'; }
+    return `<button type="button" role="option" data-saran-barang="${esc(nama)}" data-i="${esc(input.dataset.i)}"><b>${esc(nama)}</b>${pasar}</button>`;
   }).join('');
   box.hidden=false; input.setAttribute('aria-expanded','true');
 }
@@ -1840,7 +1848,7 @@ function kunciKomoditasPasar(item){
   if(!['kg','liter'].includes(unit)) return null;
   let key=null;
   if(/\bberas\b/.test(n)) key=/premium|super/.test(n)?'beras_premium':(/bawah/.test(n)?'beras_bawah':'beras_medium');
-  else if(/daging.*ayam|ayam.*daging|ayam broiler/.test(n)) key='daging_ayam';
+  else if(/\bayam\b/.test(n)&&!/(?:telur|masako|kaldu|bumbu|knorr).*ayam|ayam.*(?:telur|masako|kaldu|bumbu|knorr)/.test(n)&&/(?:daging|broiler|ras|potong|paha|dada|fillet|filet|giling|utuh)/.test(n)) key='daging_ayam';
   else if(/daging.*sapi|sapi.*daging/.test(n)) key='daging_sapi';
   else if(/\btelur\b/.test(n)) key='telur_ayam';
   else if(/bawang merah/.test(n)) key='bawang_merah';
