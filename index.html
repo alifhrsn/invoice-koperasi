@@ -71,6 +71,17 @@ table.tabel-input td{padding:3px 3px;vertical-align:top}
 table.tabel-input input{padding:7px 8px;font-size:13px}
 .kol-qty{width:60px}.kol-sat{width:68px}.kol-harga{width:94px}.kol-x{width:34px}
 .angka{text-align:right;font-family:var(--font-mono)}
+.item-nama-wrap{position:relative}
+.saran-barang{position:absolute;z-index:80;left:0;right:0;top:calc(100% + 4px);max-height:240px;overflow:auto;background:#fff;border:1px solid #B8C7DB;border-radius:9px;box-shadow:0 10px 28px rgba(16,24,40,.2)}
+.saran-barang[hidden],.harga-pasar-input[hidden]{display:none}
+.saran-barang button{display:block;width:100%;border:0;border-top:1px solid #EDF1F7;background:#fff;color:var(--tinta);padding:9px 10px;text-align:left;font-family:var(--font-ui);font-size:12.5px;cursor:pointer}
+.saran-barang button:first-child{border-top:0}.saran-barang button:hover,.saran-barang button:focus{background:#EDF5FF;outline:none}
+.saran-barang small{display:block;color:var(--abu);margin-top:2px}
+.harga-pasar-input{margin-top:6px;padding:8px 9px;border:1px solid #B9D5F2;border-radius:8px;background:#F2F8FF;font-size:10.5px;line-height:1.45;color:var(--tinta)}
+.harga-pasar-input b{display:block;color:var(--navy);margin-bottom:3px;font-size:11px}
+.harga-pasar-input .pasar-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.harga-pasar-input .pasar-lokasi{padding:5px;border-radius:6px;background:#fff;border:1px solid #D8E7F7;min-width:0}
+.harga-pasar-input .pasar-lokasi span{display:block;color:var(--abu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hapus-baris{background:none;border:none;color:var(--merah);font-size:17px;cursor:pointer;padding:6px 4px;line-height:1}
 .total-form{display:flex;justify-content:space-between;align-items:center;background:#F2F7FF;border:1px solid #CBDCF5;border-radius:8px;padding:10px 12px;margin-top:6px}
 .total-form b{font-family:var(--font-mono);font-size:17px;color:var(--navy)}
@@ -182,19 +193,9 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 .pasar-status{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
 .pasar-sumber{font-size:11px;color:var(--abu);line-height:1.45;margin-top:9px}
 .pasar-sumber a{color:var(--biru);font-weight:700}
-#dlgPasar{width:min(1120px,96vw)}
-.filter-pasar{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(220px,1.4fr) auto;gap:10px;align-items:end;margin-bottom:12px}
-.filter-pasar input,.filter-pasar select{width:100%}
-.ringkas-pasar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
-.kartu-pasar{border:1px solid var(--garis);border-radius:10px;padding:12px;background:#fff;min-width:0}
-.kartu-pasar b{display:block;color:var(--navy);margin-bottom:3px}
 .badge-pasar{display:inline-block;border-radius:99px;padding:3px 7px;font-size:10.5px;font-weight:800;margin-top:5px}
 .pasar-segar{background:#DCFCE7;color:#166534}.pasar-waspada{background:#FEF3C7;color:#92400E}.pasar-lama{background:#FEE2E2;color:#991B1B}
 .harga-pasar-utama{display:block;font-weight:800;color:var(--navy);font-size:13.5px}
-.retail-kepala{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
-.retail-kepala h2{margin:0;color:var(--navy)}
-.badge-retail{display:inline-block;border-radius:99px;padding:4px 8px;background:#E0E7FF;color:#3730A3;font-size:10.5px;font-weight:800}
-.retail-aksi{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 
 /* ===== RESPONSIF: TABLET & HP ===== */
 @media(max-width:760px){
@@ -241,6 +242,8 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   table.tabel-input td:nth-child(5){grid-column:2/3;align-self:end;align-items:flex-end}
   table.tabel-input td:nth-child(5)::before{content:'';margin:0}
   table.tabel-input input{height:44px;padding:8px;font-size:16px}
+  .saran-barang button{min-height:44px;font-size:14px}
+  .harga-pasar-input .pasar-grid{grid-template-columns:1fr}
   .hapus-baris{width:44px;height:44px;border:1px solid #F2B8B5;border-radius:8px;background:#FFF5F5;font-size:21px}
   .area-preview{padding:8px;border-radius:9px;overflow:hidden}
   .mode-toggle button{font-size:11.5px}
@@ -252,9 +255,6 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   .filter-harga{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .filter-harga>div:first-child{grid-column:1/-1}
   .ringkas-harga{grid-template-columns:1fr}
-  .filter-pasar{grid-template-columns:1fr 1fr}
-  .filter-pasar>div:nth-child(2){grid-column:1/-1;grid-row:1}
-  .ringkas-pasar{grid-template-columns:1fr}
   .batang-harga{grid-template-columns:68px minmax(0,1fr) 96px;gap:6px}
 }
 
@@ -317,7 +317,6 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <button class="btn btn-biru" id="btnAktivitas">Aktivitas</button>
   <button class="btn btn-biru" id="btnRekap">📊 Rekap Dapur</button>
   <button class="btn btn-biru" id="btnHarga">📉 Analisis Harga</button>
-  <button class="btn btn-hijau" id="btnPasar">💹 Harga Pasar</button>
   <button class="btn btn-biru" id="btnPengaturan" title="Pengaturan">⚙ Pengaturan</button>
   <button class="btn btn-biru" id="btnKelolaStaf" hidden>👥 Kelola Staf</button>
   <button class="btn btn-bahaya" id="btnKeluar" hidden style="color:#fff;border-color:rgba(255,255,255,.65)">Keluar</button>
@@ -364,7 +363,6 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
         <option value="pck"><option value="rncg"><option value="tbg"><option value="ppn">
         <option value="box"><option value="ltr"><option value="ikat"><option value="btl">
       </datalist>
-      <datalist id="dlBarang"></datalist>
       <div class="total-form"><span style="font-weight:700">TOTAL</span><b id="totalForm">Rp 0</b></div>
       <div class="kecil">Tekan Enter di kolom harga untuk langsung menambah baris baru. Jika item sangat banyak, cetakan otomatis bersambung ke lembar berikutnya.</div>
     </div>
@@ -579,31 +577,6 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
     </div>
     <div class="kecil" style="margin-bottom:12px">Harga invoice dihitung dari rata-rata harga satuan pada invoice yang sudah diterbitkan. Harga pasar hanya ditampilkan untuk komoditas resmi yang cocok dan satuan kg/liter yang sebanding; lokasi, tanggal, serta sumber selalu dicantumkan.</div>
     <div id="isiHarga"></div>
-  </div>
-</dialog>
-
-<!-- ============ HARGA PASAR SETEMPAT ============ -->
-<dialog id="dlgPasar">
-  <div class="dlg-kepala">
-    <b>💹 Harga Pasar Setempat</b>
-    <button class="btn btn-putih" id="btnTutupPasar">Tutup</button>
-  </div>
-  <div class="dlg-isi">
-    <div class="filter-pasar">
-      <div>
-        <label for="pasarDapur">Wilayah acuan</label>
-        <select id="pasarDapur">
-          <option value="">Semua wilayah</option>
-          <option value="SPPG CITEUREUP">Citeureup · Kabupaten Bogor</option>
-          <option value="SPPG JATIWARNA">Jatiwarna · Kota Bekasi</option>
-          <option value="SPPG CIMANGGIS">Cimanggis · Kota Depok</option>
-        </select>
-      </div>
-      <div><label for="pasarCari">Cari barang / komoditas</label><input id="pasarCari" type="search" placeholder="cth: telur, masker, tali rafia, sabun"></div>
-      <button class="btn btn-hijau" id="btnRefreshPasar">↻ Perbarui Sekarang</button>
-    </div>
-    <div class="kecil" style="margin-bottom:12px">Komoditas pangan memakai publikasi sumber resmi. Barang bermerek dan nonpangan memakai snapshot listing retail/marketplace yang bertanggal, bukan harga resmi atau jaminan harga saat transaksi.</div>
-    <div id="isiPasar"></div>
   </div>
 </dialog>
 
@@ -947,12 +920,68 @@ function renderBarang(){
     tr.innerHTML = `
       <td data-label="Banyak"><input type="text" inputmode="decimal" value="${esc(it.qty)}" data-i="${i}" data-k="qty" class="angka"></td>
       <td data-label="Satuan"><input type="text" list="daftarSatuan" value="${esc(it.unit)}" data-i="${i}" data-k="unit"></td>
-      <td data-label="Nama barang"><input type="text" list="dlBarang" value="${esc(it.name)}" data-i="${i}" data-k="name" placeholder="nama barang" autocomplete="off"></td>
+      <td data-label="Nama barang"><div class="item-nama-wrap"><input type="text" value="${esc(it.name)}" data-i="${i}" data-k="name" placeholder="ketik nama barang" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false"><div class="saran-barang" role="listbox" hidden></div><div class="harga-pasar-input" aria-live="polite" hidden></div></div></td>
       <td data-label="Harga"><input type="text" inputmode="numeric" value="${it.price!==''? angkaID(+it.price):''}" data-i="${i}" data-k="price" class="angka"></td>
       <td><button class="hapus-baris" title="Hapus baris" aria-label="Hapus barang ${i+1}" data-del="${i}">×</button></td>`;
     tb.appendChild(tr);
   });
+  perbaruiSemuaInfoHargaPasar();
   perbarui();
+}
+const ALIAS_INPUT_PASAR={
+  telur_ayam:'Telur',daging_ayam:'Daging Ayam',daging_sapi:'Daging Sapi',
+  beras_medium:'Beras Medium',beras_premium:'Beras Premium',beras_bawah:'Beras',
+  bawang_merah:'Bawang Merah',bawang_putih:'Bawang Putih',cabai_merah:'Cabai Merah',
+  cabai_merah_keriting:'Cabai Merah Keriting',cabai_rawit_hijau:'Cabai Rawit Hijau',
+  cabai_rawit_merah:'Cabai Rawit Merah',minyak_goreng_curah:'Minyak Goreng Curah',
+  minyak_goreng_kemasan:'Minyak Goreng Kemasan',gula_pasir_lokal:'Gula Pasir',
+  gula_pasir_premium:'Gula Pasir Kemasan',tepung_terigu:'Tepung Terigu'
+};
+function kunciPasarDariNama(nama){
+  return kunciKomoditasPasar({nama,unit:'kg'})?.key||null;
+}
+function daftarNamaAutocompleteBarang(teks){
+  const q=normalNamaHarga(teks); if(!q) return [];
+  const semua=[...db.barangList];
+  hargaPasar.forEach(x=>{
+    semua.push(ALIAS_INPUT_PASAR[x.commodity_key]||x.commodity_name);
+    if(x.commodity_name) semua.push(x.commodity_name);
+  });
+  const unik=new Map();
+  semua.forEach(nama=>{ const k=normalNamaHarga(nama); if(k&&!unik.has(k)) unik.set(k,nama); });
+  return [...unik.entries()].filter(([k])=>k.includes(q)).sort((a,b)=>{
+    const aAwal=a[0].startsWith(q)?0:1, bAwal=b[0].startsWith(q)?0:1;
+    return aAwal-bAwal || a[0].length-b[0].length || a[1].localeCompare(b[1],'id');
+  }).slice(0,8).map(([,nama])=>nama);
+}
+function tampilkanSaranBarang(input){
+  const box=input.closest('.item-nama-wrap')?.querySelector('.saran-barang'); if(!box) return;
+  const saran=daftarNamaAutocompleteBarang(input.value);
+  if(!saran.length){ box.hidden=true; box.innerHTML=''; input.setAttribute('aria-expanded','false'); return; }
+  box.innerHTML=saran.map(nama=>{
+    const punyaPasar=!!kunciPasarDariNama(nama);
+    return `<button type="button" role="option" data-saran-barang="${esc(nama)}" data-i="${esc(input.dataset.i)}"><b>${esc(nama)}</b>${punyaPasar?'<small>Harga pasar resmi tersedia</small>':''}</button>`;
+  }).join('');
+  box.hidden=false; input.setAttribute('aria-expanded','true');
+}
+function tutupSaranBarang(input){
+  const box=input?.closest('.item-nama-wrap')?.querySelector('.saran-barang');
+  if(box) box.hidden=true;
+  if(input) input.setAttribute('aria-expanded','false');
+}
+function perbaruiInfoHargaPasar(input){
+  const box=input?.closest('.item-nama-wrap')?.querySelector('.harga-pasar-input'); if(!box) return;
+  const key=kunciPasarDariNama(input.value);
+  if(!key){ box.hidden=true; box.innerHTML=''; return; }
+  if(hargaPasarMemuat&&!hargaPasar.length){ box.hidden=false; box.innerHTML='<b>Harga pasar resmi</b>Sedang mengambil data terbaru…'; return; }
+  const data=DAPUR_PASAR.map(dapur=>({dapur,harga:hargaPasarTerbaru(dapur,key)}));
+  if(!data.some(x=>x.harga)){ box.hidden=false; box.innerHTML='<b>Harga pasar resmi</b>Belum tersedia untuk barang ini.'; return; }
+  const contoh=data.find(x=>x.harga)?.harga;
+  box.innerHTML=`<b>Harga pasar resmi · ${esc(contoh?.nama||input.value)} (${esc(contoh?.unit||'')})</b><div class="pasar-grid">${data.map(x=>`<div class="pasar-lokasi"><span>${esc(LABEL_DAPUR_PASAR[x.dapur].split(' · ')[0])}</span><strong>${x.harga?rupiah(Math.round(x.harga.nilai)):'—'}</strong>${x.harga?`<span>${esc(tglIndo(x.harga.tanggal))}</span>`:''}</div>`).join('')}</div><div style="margin-top:4px;color:var(--abu)">Acuan wilayah; konfirmasi kembali sebelum menetapkan harga invoice.</div>`;
+  box.hidden=false;
+}
+function perbaruiSemuaInfoHargaPasar(){
+  document.querySelectorAll('#tbodyBarang input[data-k="name"]').forEach(perbaruiInfoHargaPasar);
 }
 $('tbodyBarang').addEventListener('input', e=>{
   const el = e.target;
@@ -967,6 +996,8 @@ $('tbodyBarang').addEventListener('input', e=>{
     items[i].qty = el.value.replace(',','.');
   }else if(k === 'name'){
     items[i].name = el.value;
+    tampilkanSaranBarang(el);
+    perbaruiInfoHargaPasar(el);
     // auto-isi harga terakhir bila kolom harga masih kosong
     if(items[i].price==='' || items[i].price==null){
       const dapur = $('pelanggan').value.trim();
@@ -982,13 +1013,34 @@ $('tbodyBarang').addEventListener('input', e=>{
   }
   perbarui();
 });
+$('tbodyBarang').addEventListener('focusin',e=>{
+  if(e.target.dataset.k==='name') tampilkanSaranBarang(e.target);
+});
+$('tbodyBarang').addEventListener('focusout',e=>{
+  if(e.target.dataset.k==='name') setTimeout(()=>tutupSaranBarang(e.target),120);
+});
 $('tbodyBarang').addEventListener('keydown', e=>{
+  if(e.key==='Escape'&&e.target.dataset.k==='name'){ tutupSaranBarang(e.target); return; }
   if(e.key === 'Enter' && e.target.dataset.k === 'price'){
     e.preventDefault();
     tambahBaris(null, true);
   }
 });
 $('tbodyBarang').addEventListener('click', e=>{
+  const pilihan=e.target.closest('[data-saran-barang]');
+  if(pilihan){
+    const i=+pilihan.dataset.i, nama=pilihan.dataset.saranBarang;
+    const input=$('tbodyBarang').querySelector(`input[data-i="${i}"][data-k="name"]`);
+    if(!input||!items[i]) return;
+    items[i].name=nama; input.value=nama; tutupSaranBarang(input);
+    const key=kunciPasarDariNama(nama), contoh=key?hargaPasar.find(x=>x.commodity_key===key):null;
+    if(contoh&&!items[i].unit){ items[i].unit=contoh.unit; const unitInput=input.closest('tr').querySelector('input[data-k="unit"]'); if(unitInput) unitInput.value=contoh.unit; }
+    if(items[i].price===''||items[i].price==null){
+      const h=hargaTerakhir($('pelanggan').value.trim(),nama);
+      if(h){ items[i].price=h; const p=input.closest('tr').querySelector('input[data-k="price"]'); if(p) p.value=angkaID(h); }
+    }
+    perbaruiInfoHargaPasar(input); perbarui(); input.focus(); return;
+  }
   const d = e.target.dataset.del;
   if(d !== undefined){ items.splice(+d,1); if(items.length===0) items.push({qty:'',unit:'',name:'',price:''}); renderBarang(); }
 });
@@ -1580,7 +1632,7 @@ function normalHargaTeks(v){
   return String(v||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id-ID');
 }
 const EJAAN_HARGA={
-  saos:'saus',coklat:'cokelat',cokla:'cokelat',cabe:'cabai',telor:'telur',rapia:'rafia',
+  saos:'saus',coklat:'cokelat',cokla:'cokelat',cabe:'cabai',telor:'telur',
   filet:'fillet',gilling:'giling',alumunium:'aluminium',besae:'besar',
   mintak:'minyak',ulan:'ulang',sabung:'sabun',pokcoy:'pakcoy',
   tisue:'tisu',tissue:'tisu',stainles:'stainless',bongglan:'bonggolan',
@@ -1748,7 +1800,7 @@ const LABEL_DAPUR_PASAR={
   'SPPG JATIWARNA':'Jatiwarna · Kota Bekasi',
   'SPPG CIMANGGIS':'Cimanggis · Kota Depok'
 };
-let hargaPasar=[], referensiRetail=[], hargaPasarMemuat=false, hargaPasarPesan='Harga pasar belum dimuat.';
+let hargaPasar=[], hargaPasarMemuat=false, hargaPasarPesan='Harga pasar belum dimuat.';
 function rataHarga(poin){ return poin.length?poin.reduce((s,x)=>s+x.harga,0)/poin.length:null; }
 function dataPeriodeHarga(item,mulai,selesai){
   const poin=(item?.poin||[]).filter(x=>x.tanggal>=mulai&&x.tanggal<=selesai);
@@ -1862,65 +1914,6 @@ function hargaInvoiceTerakhirPasar(dapur,key,unit){
   });
   return hasil;
 }
-function renderReferensiRetail(cari=''){
-  const cariNormal=normalNamaHarga(cari);
-  const data=referensiRetail.filter(x=>{
-    if(!cariNormal) return true;
-    return normalNamaHarga([x.item_name,x.brand,x.package_label,x.item_key,x.source_name].join(' ')).includes(cariNormal);
-  });
-  let h='<div class="panel" style="margin-top:14px"><div class="retail-kepala"><div><h2>Referensi Retail / Marketplace</h2><div class="kecil">Snapshot listing untuk barang bermerek dan nonpangan. Cocokkan kemasan, varian, promo, ongkir, dan stok sebelum membeli.</div></div><span class="badge-retail">Bukan harga resmi</span></div>';
-  if(!data.length){
-    h+=`<div class="kosong">${referensiRetail.length?'Barang retail tidak ditemukan.':'Belum ada referensi retail tersimpan.'}</div>`;
-  }else{
-    h+='<div class="tabel-scroll"><table class="tabel-harga"><thead><tr><th>Barang &amp; kemasan</th><th>Harga listing</th><th>Harga pembanding</th><th>Diperiksa</th><th>Sumber</th></tr></thead><tbody>';
-    data.forEach(x=>{
-      const diperiksa=new Date(x.checked_at).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'});
-      h+=`<tr><td><b>${esc(x.item_name)}</b><div class="kecil">${esc(x.brand||'')} · ${esc(x.package_label)}</div>${x.notes?`<div class="kecil">${esc(x.notes)}</div>`:''}</td><td><span class="harga-pasar-utama">${rupiah(Math.round(Number(x.price)))}</span></td><td>${rupiah(Math.round(Number(x.price_per_unit)))} / ${esc(x.comparison_unit)}</td><td>${esc(diperiksa)}</td><td><a class="btn btn-biru" href="${esc(x.source_url)}" target="_blank" rel="noopener noreferrer">Buka ${esc(x.source_name)}</a></td></tr>`;
-    });
-    h+='</tbody></table></div>';
-  }
-  h+='<div class="retail-aksi"><a class="btn btn-hijau" href="https://klikindogrosir.com/" target="_blank" rel="noopener noreferrer">Cek KlikIndogrosir</a></div><div class="pasar-sumber">KlikIndogrosir menyesuaikan harga dan stok berdasarkan gerai setelah login. Karena itu harga Indogrosir tidak disalin sebagai harga lokal sebelum gerai akun dipastikan.</div></div>';
-  return h;
-}
-function renderMenuHargaPasar(){
-  const wadah=$('isiPasar'); if(!wadah) return;
-  const tombol=$('btnRefreshPasar');
-  if(tombol){ tombol.disabled=hargaPasarMemuat; tombol.textContent=hargaPasarMemuat?'Memperbarui…':'↻ Perbarui Sekarang'; }
-  const pilih=$('pasarDapur')?.value||'', cari=normalHargaTeks($('pasarCari')?.value||'');
-  const dapurTampil=pilih?[pilih]:DAPUR_PASAR;
-  if(!hargaPasar.length){
-    wadah.innerHTML=`<div class="kosong">${esc(hargaPasarMemuat?'Mengambil harga terbaru dari sumber resmi…':hargaPasarPesan)}</div>`+renderReferensiRetail(cari);
-    return;
-  }
-  let h='<div class="pasar-status"><b>Status data resmi</b><span class="kecil">'+esc(hargaPasarMemuat?'Sedang memperbarui…':hargaPasarPesan)+'</span></div><div class="ringkas-pasar">';
-  DAPUR_PASAR.forEach(dapur=>{
-    const semua=hargaPasar.filter(x=>x.dapur===dapur), tanggal=semua.reduce((m,x)=>x.price_date>m?x.price_date:m,''), terbaru=semua.filter(x=>x.price_date===tanggal);
-    const status=statusKesegaranPasar(tanggal), region=terbaru[0]?.region_name||LABEL_DAPUR_PASAR[dapur], fetched=terbaru.reduce((m,x)=>x.fetched_at>m?x.fetched_at:m,'');
-    const waktuCek=fetched?new Date(fetched).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'';
-    h+=`<div class="kartu-pasar"><b>${esc(LABEL_DAPUR_PASAR[dapur])}</b><div class="kecil">${esc(region)}</div><div class="kecil">${tanggal?esc(tglIndo(tanggal)):'Belum ada data'} · ${new Set(terbaru.map(x=>x.commodity_key)).size} komoditas</div>${waktuCek?`<div class="kecil">Diperiksa server: ${esc(waktuCek)}</div>`:''}<span class="badge-pasar ${status.kelas}">${esc(status.teks)}</span></div>`;
-  });
-  h+='</div>';
-  const keys=[...new Set(hargaPasar.map(x=>x.commodity_key))].map(key=>{
-    const contoh=hargaPasar.find(x=>x.commodity_key===key); return {key,nama:contoh?.commodity_name||key};
-  }).filter(x=>!cari||normalHargaTeks(x.nama).includes(cari)||normalHargaTeks(x.key).includes(cari)).sort((a,b)=>a.nama.localeCompare(b.nama,'id'));
-  if(!keys.length){ wadah.innerHTML=h+'<div class="kosong">Komoditas resmi tidak ditemukan.</div>'+renderReferensiRetail(cari); return; }
-  h+='<div class="panel"><div class="tabel-scroll"><table class="tabel-harga"><thead><tr><th>Komoditas</th>'+
-    dapurTampil.map(x=>`<th>${esc(LABEL_DAPUR_PASAR[x].split(' · ')[0])}</th>`).join('')+'<th>Rentang wilayah</th></tr></thead><tbody>';
-  keys.forEach(item=>{
-    const data=dapurTampil.map(dapur=>({dapur,data:hargaPasarTerbaru(dapur,item.key)})), nilai=data.map(x=>x.data?.nilai).filter(x=>x!=null);
-    const contoh=data.find(x=>x.data)?.data, nama=contoh?.nama||item.nama;
-    h+=`<tr><td><b>${esc(nama)}</b><div class="kecil">${esc(contoh?.unit||'')}</div></td>`;
-    data.forEach(({dapur,data})=>{
-      if(!data){ h+='<td>—</td>'; return; }
-      const status=statusKesegaranPasar(data.tanggal), inv=hargaInvoiceTerakhirPasar(dapur,item.key,data.unit);
-      h+=`<td><span class="harga-pasar-utama">${rupiah(Math.round(data.nilai))}</span><div class="kecil">${esc(tglIndo(data.tanggal))}${data.varian>1?` · rerata ${data.varian} varian`:''}</div><span class="badge-pasar ${status.kelas}">${esc(status.teks)}</span>${inv?`<div class="kecil ${kelasSelisihHarga(data.nilai,inv.nilai)}">Invoice terakhir: ${rupiah(Math.round(inv.nilai))} · ${esc(teksSelisihHarga(data.nilai,inv.nilai))}</div>`:''}</td>`;
-    });
-    h+=`<td>${nilai.length>1?`${rupiah(Math.round(Math.min(...nilai)))}–${rupiah(Math.round(Math.max(...nilai)))}`:'—'}</td></tr>`;
-  });
-  const sumber=[...new Map(hargaPasar.map(x=>[x.source_url,{url:x.source_url,nama:x.source_name}])).values()];
-  h+='</tbody></table></div><div class="pasar-sumber">Sumber: '+sumber.map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.nama)}</a>`).join(' · ')+'. Citeureup memakai data Kabupaten Bogor; Jatiwarna memakai Kota Bekasi; Cimanggis memakai Kota Depok. Waktu publikasi dapat berbeda antarwilayah.</div></div>';
-  wadah.innerHTML=h+renderReferensiRetail(cari);
-}
 function htmlHargaPasar(d){
   const data=dataHargaPasarItem(d.item);
   let h='<div class="panel" style="margin-bottom:12px"><div class="pasar-status"><h2 style="margin:0">Harga Pasar Setempat</h2>'+
@@ -1944,23 +1937,18 @@ function htmlHargaPasar(d){
 }
 async function muatHargaPasar(perbarui=true){
   if(hargaPasarMemuat) return;
-  if(!sb||!sbUser){ hargaPasarPesan='Login dan koneksi online diperlukan.'; renderAnalisisHarga(); renderMenuHargaPasar(); return; }
-  hargaPasarMemuat=true; hargaPasarPesan='Menghubungkan sumber resmi…'; renderAnalisisHarga(); renderMenuHargaPasar();
+  if(!sb||!sbUser){ hargaPasarPesan='Login dan koneksi online diperlukan.'; renderAnalisisHarga(); perbaruiSemuaInfoHargaPasar(); return; }
+  hargaPasarMemuat=true; hargaPasarPesan='Menghubungkan sumber resmi…'; renderAnalisisHarga(); perbaruiSemuaInfoHargaPasar();
   const pesan=[];
   try{
     const sejak=new Date(); sejak.setDate(sejak.getDate()-21);
     const tarikCache=async()=>{
-      const [pasar,retail]=await Promise.all([
-        sb.from('market_prices').select('price_date,dapur,region_name,region_level,source_name,source_url,commodity_key,commodity_name,unit,price,fetched_at').gte('price_date',sejak.toISOString().slice(0,10)).order('price_date',{ascending:false}),
-        sb.from('retail_price_references').select('item_key,item_name,brand,package_label,comparison_quantity,comparison_unit,price,price_per_unit,source_name,source_url,seller_name,seller_location,checked_at,notes').order('checked_at',{ascending:false})
-      ]);
-      if(pasar.error) throw pasar.error;
-      hargaPasar=pasar.data||[];
-      if(retail.error) pesan.push('Referensi retail belum dapat dimuat.');
-      else referensiRetail=retail.data||[];
+      const {data,error}=await sb.from('market_prices').select('price_date,dapur,region_name,region_level,source_name,source_url,commodity_key,commodity_name,unit,price,fetched_at').gte('price_date',sejak.toISOString().slice(0,10)).order('price_date',{ascending:false});
+      if(error) throw error;
+      hargaPasar=data||[];
     };
     await tarikCache();
-    renderAnalisisHarga(); renderMenuHargaPasar();
+    renderAnalisisHarga(); perbaruiSemuaInfoHargaPasar();
     if(perbarui){
       const hasil=await sb.functions.invoke('sync-market-prices',{body:{}});
       if(hasil.error) pesan.push('Pembaruan gagal; menampilkan cache terakhir.');
@@ -1970,9 +1958,8 @@ async function muatHargaPasar(perbarui=true){
       }
     }
     pesan.push(hargaPasar.length?`${hargaPasar.length} referensi harga resmi termuat.`:'Belum ada harga pasar resmi tersimpan.');
-    if(referensiRetail.length) pesan.push(`${referensiRetail.length} referensi retail termuat.`);
   }catch(e){ pesan.push(e.message||'Harga pasar gagal dimuat.'); }
-  hargaPasarMemuat=false; hargaPasarPesan=pesan.join(' '); renderAnalisisHarga(); renderMenuHargaPasar();
+  hargaPasarMemuat=false; hargaPasarPesan=pesan.join(' '); renderAnalisisHarga(); perbaruiSemuaInfoHargaPasar();
 }
 function renderAnalisisHarga(){
   const wadah=$('isiHarga'), d=hitungAnalisisHarga();
@@ -2017,11 +2004,6 @@ $('btnTerapkanHarga').addEventListener('click',renderAnalisisHarga);
 $('btnHargaPasar').addEventListener('click',()=>muatHargaPasar(true));
 $('hargaItem').addEventListener('change',renderAnalisisHarga);
 $('btnHargaCsv').addEventListener('click',eksporAnalisisHarga);
-$('btnPasar').addEventListener('click',()=>{ $('dlgPasar').showModal(); renderMenuHargaPasar(); muatHargaPasar(true); });
-$('btnTutupPasar').addEventListener('click',()=>$('dlgPasar').close());
-$('btnRefreshPasar').addEventListener('click',()=>muatHargaPasar(true));
-$('pasarDapur').addEventListener('change',renderMenuHargaPasar);
-$('pasarCari').addEventListener('input',renderMenuHargaPasar);
 
 /* ================== DASHBOARD ================== */
 function daftarPeriode(){
@@ -2183,10 +2165,6 @@ $('statusBayar').addEventListener('change', async ()=>{
     }
   }
 });
-// saat dapur (pelanggan) berganti, perbarui harga suggest
-$('pelanggan').addEventListener('input', isiDatalistBarang);
-$('pelanggan').addEventListener('change', isiDatalistBarang);
-
 // pilih rekening tersimpan -> isi otomatis bank/an/rek
 $('pilihRek').addEventListener('change', ()=>{
   const i = $('pilihRek').value;
@@ -2202,17 +2180,6 @@ function isiDatalistPelanggan(){
   $('daftarPelanggan').innerHTML = set.map(p=>`<option value="${esc(p)}">`).join('');
   isiPilihanRekening();
   isiPilihanPenandatangan();
-  isiDatalistBarang();
-}
-function isiDatalistBarang(){
-  const dl=$('dlBarang'); if(!dl) return;
-  const dapur = $('pelanggan') ? $('pelanggan').value.trim() : '';
-  // tampilkan nama barang + harga terakhir (dari dapur ini bila ada) sebagai petunjuk
-  dl.innerHTML = db.barangList.map(nm=>{
-    const h = hargaTerakhir(dapur, nm);
-    const label = h ? `${nm} — Rp ${angkaID(h)}` : nm;
-    return `<option value="${esc(nm)}" label="${esc(label)}">`;
-  }).join('');
 }
 function isiPilihanRekening(){
   const sel = $('pilihRek'); if(!sel) return;
@@ -2623,6 +2590,7 @@ async function sbMulaiOnline(user){
   await sbDorongSemua();
   sbLangganan(user);
   setSbStatus('Online — tersinkron realtime', true);
+  muatHargaPasar(true);
 }
 $('formLogin').addEventListener('submit', async e=>{
   e.preventDefault();
