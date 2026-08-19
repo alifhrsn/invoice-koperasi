@@ -566,6 +566,7 @@ create table if not exists public.market_prices (
   region_level text not null,
   source_name text not null,
   source_url text not null,
+  market_name text not null default '',
   commodity_key text not null,
   commodity_name text not null,
   unit text not null default 'kg',
@@ -575,7 +576,7 @@ create table if not exists public.market_prices (
   constraint market_prices_region_level_check check (region_level in ('kabupaten','kota')),
   constraint market_prices_price_check check (price > 0),
   constraint market_prices_unit_check check (unit in ('kg','liter')),
-  constraint market_prices_source_item_unique unique (dapur,price_date,source_name,commodity_name)
+  constraint market_prices_source_item_unique unique (dapur,price_date,source_name,market_name,commodity_name)
 );
 create index if not exists market_prices_item_date_idx on public.market_prices(commodity_key,price_date desc);
 create index if not exists market_prices_dapur_item_date_idx on public.market_prices(dapur,commodity_key,price_date desc);

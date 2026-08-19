@@ -14,6 +14,7 @@ type MarketPrice = {
   region_level: "kabupaten" | "kota";
   source_name: string;
   source_url: string;
+  market_name: string;
   commodity_key: string;
   commodity_name: string;
   unit: "kg" | "liter";
@@ -24,8 +25,13 @@ type MarketPrice = {
 const BI_SOURCE = "PIHPS Bank Indonesia";
 const BI_URL = "https://www.bi.go.id/hargapangan/TabelHarga/PasarTradisionalDaerah";
 const BI_API = "https://www.bi.go.id/hargapangan/WebSite/TabelHarga/GetGridDataDaerah";
-const BOGOR_SOURCE = "DISDAGIN Kabupaten Bogor / DIRGA";
-const BOGOR_URL = "https://disdagin.bogorkab.go.id/fetchharga";
+const BOGOR_SOURCE = "DIRGA Kabupaten Bogor";
+const BOGOR_URL = "https://dirga.bogorkab.go.id/";
+const BOGOR_API = "https://dirga.bogorkab.go.id/api/v1/price/comparison";
+const CITEUREUP_MARKETS = [
+  { id: 17, name: "Pasar Citeureup I" },
+  { id: 18, name: "Pasar Citeureup II" },
+] as const;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -47,7 +53,12 @@ function commodityKey(name: string): string | null {
   if (/^beras kualitas medium|^beras medium/.test(value)) return "beras_medium";
   if (/^beras kualitas super|^beras premium/.test(value)) return "beras_premium";
   if (/daging ayam ras|daging ayam broiler/.test(value)) return "daging_ayam";
-  if (/^daging sapi/.test(value)) return "daging_sapi";
+  if (/^daging sapi beku/.test(value)) return "daging_sapi_beku";
+  if (/^daging sapi.*has dalam/.test(value)) return "daging_sapi_has_dalam";
+  if (/^daging sapi.*has luar/.test(value)) return "daging_sapi_has_luar";
+  if (/^daging sapi.*paha belakang/.test(value)) return "daging_sapi_paha_belakang";
+  if (/^daging sapi.*paha depan/.test(value)) return "daging_sapi_paha_depan";
+  if (/^daging sapi.*tetelan/.test(value)) return "daging_sapi_tetelan";
   if (/telur ayam (ras segar|broiler)/.test(value)) return "telur_ayam";
   if (/^bawang merah/.test(value)) return "bawang_merah";
   if (/^bawang putih/.test(value) && !/cutting/.test(value)) return "bawang_putih";
@@ -151,6 +162,7 @@ async function fetchBiPrices(
       region_level: "kota",
       source_name: BI_SOURCE,
       source_url: BI_URL,
+      market_name: "",
       commodity_key: key,
       commodity_name: String(row.name).trim(),
       unit: /minyak goreng/i.test(String(row.name)) ? "liter" : "kg",
@@ -161,23 +173,27 @@ async function fetchBiPrices(
   return result;
 }
 
-async function fetchBogorPrices(fetchedAt: string) {
-  const payload = await fetchJson(BOGOR_URL, 8_000);
-  const priceDate = String(payload?.data?.price_date ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(priceDate)) throw new Error("Tanggal sumber Bogor tidak valid");
+async function fetchCiteureupMarket(market: typeof CITEUREUP_MARKETS[number], priceDate: string, fetchedAt: string) {
+  const query = new URLSearchParams({
+    market_id: String(market.id),
+    start_date: priceDate,
+    end_date: priceDate,
+  });
+  const payload = await fetchJson(`${BOGOR_API}?${query}`, 8_000);
   const result: MarketPrice[] = [];
-  for (const item of payload?.data?.price ?? []) {
-    const name = String(item.comodity ?? "").trim();
+  for (const item of payload?.data?.commodities ?? []) {
+    const name = String(item.comodity_name ?? "").trim();
     const key = commodityKey(name);
-    const price = parsePrice(item.price);
+    const price = parsePrice(item.end_price);
     if (!key || !price) continue;
     result.push({
       price_date: priceDate,
       dapur: "SPPG CITEUREUP",
-      region_name: "Kabupaten Bogor (acuan Citeureup)",
+      region_name: "Citeureup, Kabupaten Bogor",
       region_level: "kabupaten",
       source_name: BOGOR_SOURCE,
       source_url: BOGOR_URL,
+      market_name: market.name,
       commodity_key: key,
       commodity_name: name,
       unit: /minyak goreng/i.test(name) ? "liter" : "kg",
@@ -186,6 +202,17 @@ async function fetchBogorPrices(fetchedAt: string) {
     });
   }
   return result;
+}
+
+async function fetchBogorPrices(today: string, fetchedAt: string) {
+  for (let mundur = 0; mundur < 8; mundur++) {
+    const priceDate = addDays(today, -mundur);
+    const markets = await Promise.all(CITEUREUP_MARKETS.map((market) =>
+      fetchCiteureupMarket(market, priceDate, fetchedAt)
+    ));
+    if (markets.every((rows) => rows.length > 0)) return markets.flat();
+  }
+  throw new Error("Harga Pasar Citeureup I dan II belum tersedia dalam 8 hari terakhir");
 }
 
 Deno.serve(async (request: Request) => {
@@ -210,7 +237,7 @@ Deno.serve(async (request: Request) => {
   const fetchedAt = new Date().toISOString();
   const today = jakartaDate();
   const jobs = await Promise.allSettled([
-    fetchBogorPrices(fetchedAt),
+    fetchBogorPrices(today, fetchedAt),
     fetchBiPrices(
       "SPPG JATIWARNA",
       "Kota Bekasi (acuan Pondok Melati/Jatiwarna)",
@@ -236,7 +263,7 @@ Deno.serve(async (request: Request) => {
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
   const { error: upsertError } = await admin.from("market_prices").upsert(rows, {
-    onConflict: "dapur,price_date,source_name,commodity_name",
+    onConflict: "dapur,price_date,source_name,market_name,commodity_name",
   });
   if (upsertError) return json({ error: upsertError.message, warnings }, 500);
 

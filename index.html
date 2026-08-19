@@ -963,7 +963,7 @@ function htmlAcuanPasarAutocomplete(teks){
   let baris='';
   keys.forEach(key=>DAPUR_PASAR.forEach(dapur=>{
     const h=hargaPasarTerbaru(dapur,key); if(!h) return;
-    baris+=`<div class="acuan-pasar-baris"><span>${esc(LABEL_DAPUR_PASAR[dapur].split(' · ')[0])}</span><em>${esc(h.nama)}</em><strong>${rupiah(Math.round(h.nilai))}/${esc(h.unit)}</strong></div>`;
+    baris+=`<div class="acuan-pasar-baris"><span>${esc(LABEL_DAPUR_PASAR[dapur].split(' · ')[0])}${h.pasar?.length?` · ${esc(h.pasar.join(' & '))}`:''}</span><em>${esc(h.nama)}</em><strong>${rupiah(Math.round(h.nilai))}/${esc(h.unit)}</strong></div>`;
   }));
   if(!baris) return hargaPasarMemuat?'<div class="saran-acuan-pasar"><b>Acuan harga pasar resmi</b><small>Sedang memuat data…</small></div>':'';
   return `<div class="saran-acuan-pasar"><b>Acuan harga pasar resmi · nama mengikuti sumber</b><div class="acuan-pasar-grid">${baris}</div><small>Hanya acuan komoditas umum; tidak menyamakan merek, kualitas, potongan, frozen, fillet, atau varian barang.</small></div>`;
@@ -997,7 +997,7 @@ function perbaruiInfoHargaPasar(input){
   if(hargaPasarMemuat&&!hargaPasar.length){ box.hidden=false; box.innerHTML='<b>Harga pasar resmi</b>Sedang mengambil data terbaru…'; return; }
   const data=DAPUR_PASAR.map(dapur=>({dapur,harga:hargaPasarTerbaru(dapur,key)}));
   if(!data.some(x=>x.harga)){ box.hidden=false; box.innerHTML='<b>Harga pasar resmi</b>Belum tersedia untuk barang ini.'; return; }
-  box.innerHTML=`<b>Harga pasar resmi · nama mengikuti sumber</b><div class="pasar-grid">${data.map(x=>`<div class="pasar-lokasi"><span>${esc(LABEL_DAPUR_PASAR[x.dapur].split(' · ')[0])}</span>${x.harga?`<em>${esc(x.harga.nama)}</em>`:''}<strong>${x.harga?rupiah(Math.round(x.harga.nilai)):'—'}${x.harga?`/${esc(x.harga.unit)}`:''}</strong>${x.harga?`<span>${esc(tglIndo(x.harga.tanggal))}</span>`:''}</div>`).join('')}</div><div style="margin-top:4px;color:var(--abu)">Acuan wilayah; konfirmasi kembali sebelum menetapkan harga invoice.</div>`;
+  box.innerHTML=`<b>Harga pasar resmi · nama mengikuti sumber</b><div class="pasar-grid">${data.map(x=>`<div class="pasar-lokasi"><span>${esc(LABEL_DAPUR_PASAR[x.dapur].split(' · ')[0])}${x.harga?.pasar?.length?` · ${esc(x.harga.pasar.join(' & '))}`:''}</span>${x.harga?`<em>${esc(x.harga.nama)}</em>`:''}<strong>${x.harga?rupiah(Math.round(x.harga.nilai)):'—'}${x.harga?`/${esc(x.harga.unit)}`:''}</strong>${x.harga?`<span>${esc(tglIndo(x.harga.tanggal))}</span>`:''}</div>`).join('')}</div><div style="margin-top:4px;color:var(--abu)">Acuan wilayah; konfirmasi kembali sebelum menetapkan harga invoice.</div>`;
   box.hidden=false;
 }
 function perbaruiSemuaInfoHargaPasar(){
@@ -1897,8 +1897,11 @@ function dataHargaPasarItem(item){
     const semua=hargaPasar.filter(x=>x.dapur===nama&&x.commodity_key===cocok.key&&x.unit===cocok.unit);
     if(!semua.length) return {nama,ada:false};
     const tanggal=semua.reduce((m,x)=>x.price_date>m?x.price_date:m,'');
-    const terbaru=semua.filter(x=>x.price_date===tanggal), nilai=rataHarga(terbaru.map(x=>({harga:Number(x.price)||0})).filter(x=>x.harga>0));
-    return {nama,ada:nilai!=null,tanggal,nilai,region:terbaru[0]?.region_name||'',source:terbaru[0]?.source_name||'',url:terbaru[0]?.source_url||'',varian:terbaru.length};
+    let terbaru=semua.filter(x=>x.price_date===tanggal);
+    if(terbaru.some(x=>x.market_name)) terbaru=terbaru.filter(x=>x.market_name);
+    const nilai=rataHarga(terbaru.map(x=>({harga:Number(x.price)||0})).filter(x=>x.harga>0));
+    const pasar=[...new Set(terbaru.map(x=>x.market_name).filter(Boolean))];
+    return {nama,ada:nilai!=null,tanggal,nilai,region:terbaru[0]?.region_name||'',source:terbaru[0]?.source_name||'',url:terbaru[0]?.source_url||'',varian:terbaru.length,pasar};
   });
   return {cocok,baris};
 }
@@ -1906,11 +1909,14 @@ function hargaPasarTerbaru(dapur,key){
   const semua=hargaPasar.filter(x=>x.dapur===dapur&&x.commodity_key===key);
   if(!semua.length) return null;
   const tanggal=semua.reduce((m,x)=>x.price_date>m?x.price_date:m,'');
-  const rows=semua.filter(x=>x.price_date===tanggal), angka=rows.map(x=>Number(x.price)||0).filter(Boolean);
+  let rows=semua.filter(x=>x.price_date===tanggal);
+  if(rows.some(x=>x.market_name)) rows=rows.filter(x=>x.market_name);
+  const angka=rows.map(x=>Number(x.price)||0).filter(Boolean);
   if(!angka.length) return null;
   return {tanggal,nilai:angka.reduce((a,b)=>a+b,0)/angka.length,unit:rows[0].unit,nama:rows[0].commodity_name,
     region:rows[0].region_name,source:rows[0].source_name,url:rows[0].source_url,
-    fetchedAt:rows.reduce((m,x)=>x.fetched_at>m?x.fetched_at:m,''),varian:rows.length};
+    fetchedAt:rows.reduce((m,x)=>x.fetched_at>m?x.fetched_at:m,''),varian:rows.length,
+    pasar:[...new Set(rows.map(x=>x.market_name).filter(Boolean))]};
 }
 function umurHargaPasar(tanggal){
   if(!tanggal) return null;
@@ -1948,9 +1954,9 @@ function htmlHargaPasar(d){
     const inv=d.baris.find(b=>normalHargaTeks(b.nama)===normalHargaTeks(x.nama)), hargaInv=inv?.b??null;
     if(!x.ada){ h+=`<tr><td>${esc(x.nama)}</td><td>—</td><td>—</td><td>${hargaInv==null?'—':rupiah(Math.round(hargaInv))}</td><td>—</td></tr>`; return; }
     const sel=selisihHarga(hargaInv,x.nilai);
-    h+=`<tr><td><b>${esc(x.nama)}</b><div class="kecil">${esc(x.region)}</div></td><td>${rupiah(Math.round(x.nilai))}${x.varian>1?`<div class="kecil">rata-rata ${x.varian} varian</div>`:''}</td><td>${esc(tglIndo(x.tanggal))}</td><td>${hargaInv==null?'—':rupiah(Math.round(hargaInv))}</td><td class="${kelasSelisihHarga(hargaInv,x.nilai)}">${sel.nilai==null?'—':esc(teksSelisihHarga(hargaInv,x.nilai))}</td></tr>`;
+    h+=`<tr><td><b>${esc(x.nama)}</b><div class="kecil">${esc(x.region)}${x.pasar?.length?` · ${esc(x.pasar.join(' & '))}`:''}</div></td><td>${rupiah(Math.round(x.nilai))}${x.pasar?.length>1?`<div class="kecil">rata-rata ${x.pasar.length} pasar</div>`:''}</td><td>${esc(tglIndo(x.tanggal))}</td><td>${hargaInv==null?'—':rupiah(Math.round(hargaInv))}</td><td class="${kelasSelisihHarga(hargaInv,x.nilai)}">${sel.nilai==null?'—':esc(teksSelisihHarga(hargaInv,x.nilai))}</td></tr>`;
   });
-  h+='</tbody></table></div><div class="pasar-sumber">Citeureup memakai rata-rata Kabupaten Bogor dari DISDAGIN/DIRGA. Jatiwarna memakai rata-rata Kota Bekasi dan Cimanggis memakai rata-rata Kota Depok dari PIHPS Bank Indonesia. Data kota/kabupaten tidak diklaim sebagai harga persis kelurahan. ';
+  h+='</tbody></table></div><div class="pasar-sumber">Citeureup memakai rata-rata Pasar Citeureup I dan Pasar Citeureup II dari DIRGA Kabupaten Bogor. Jatiwarna memakai rata-rata Kota Bekasi dan Cimanggis memakai rata-rata Kota Depok dari PIHPS Bank Indonesia. Data kota tidak diklaim sebagai harga persis kelurahan. ';
   const sumber=[...new Map(tersedia.map(x=>[x.url,{url:x.url,nama:x.source}])).values()];
   h+=sumber.map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.nama)}</a>`).join(' · ')+'</div></div>';
   return h;
@@ -1963,7 +1969,7 @@ async function muatHargaPasar(perbarui=true){
   try{
     const sejak=new Date(); sejak.setDate(sejak.getDate()-21);
     const tarikCache=async()=>{
-      const {data,error}=await sb.from('market_prices').select('price_date,dapur,region_name,region_level,source_name,source_url,commodity_key,commodity_name,unit,price,fetched_at').gte('price_date',sejak.toISOString().slice(0,10)).order('price_date',{ascending:false});
+      const {data,error}=await sb.from('market_prices').select('price_date,dapur,region_name,region_level,source_name,source_url,market_name,commodity_key,commodity_name,unit,price,fetched_at').gte('price_date',sejak.toISOString().slice(0,10)).order('price_date',{ascending:false});
       if(error) throw error;
       hargaPasar=data||[];
     };
