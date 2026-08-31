@@ -178,6 +178,20 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
 
 /* ===== ANALISIS HARGA ===== */
 #dlgHarga{width:min(1040px,96vw)}
+#dlgDashboard{width:min(1180px,96vw)}
+.kontrol-tab{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 14px}
+.kontrol-tab .btn.aktif{background:var(--navy);color:#fff;border-color:var(--navy)}
+.kontrol-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.kontrol-table th,.kontrol-table td{padding:7px 6px;border-top:1px solid var(--garis);vertical-align:top}
+.kontrol-table th{text-align:left;color:var(--abu);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.kontrol-table .r{text-align:right;font-variant-numeric:tabular-nums}
+.badge-kontrol{display:inline-block;border-radius:999px;padding:2px 7px;font-size:11px;font-weight:700;background:#eef2f7;color:var(--navy)}
+.badge-kontrol.merah{background:#fde8e7;color:#a5241c}.badge-kontrol.kuning{background:#fff3cd;color:#7a5900}.badge-kontrol.hijau{background:#e6f6eb;color:#1a6b35}
+.audit-revisi{border:1px solid var(--garis);border-radius:10px;margin-bottom:8px;background:#fff}
+.audit-revisi>summary{cursor:pointer;padding:10px 12px;list-style:none}.audit-revisi>summary::-webkit-details-marker{display:none}
+.audit-revisi .audit-isi{padding:0 12px 12px}.audit-perubahan{display:grid;grid-template-columns:minmax(120px,.7fr) 1fr 1fr;gap:6px;font-size:12px;padding:5px 0;border-top:1px solid var(--garis)}
+.audit-perubahan b{color:var(--abu)}
+.kontrol-note{padding:10px 12px;border-left:4px solid var(--biru);background:#f3f7fc;border-radius:7px;font-size:13px;line-height:1.45}
 .filter-harga{display:grid;grid-template-columns:minmax(190px,1.35fr) repeat(4,minmax(135px,1fr));gap:10px;align-items:end;margin-bottom:12px}
 .filter-harga input,.filter-harga select,.filter-harga .btn{width:100%;min-width:0}
 .ringkas-harga{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
@@ -257,6 +271,8 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   .item-riwayat{align-items:stretch}
   .item-riwayat .info{flex-basis:100%;min-width:0}
   .item-riwayat .btn{flex:1;min-height:42px}
+  .kontrol-table{display:block;overflow-x:auto;white-space:nowrap}
+  .audit-perubahan{grid-template-columns:1fr}.audit-perubahan b{margin-top:4px}
   .dlg-kepala{padding:10px 12px}
   .dlg-isi{padding:10px}
   .filter-harga{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
@@ -319,7 +335,7 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   <span class="auth-user" id="authUser" hidden></span>
   <span id="sbStatus" style="font-size:11.5px;background:rgba(255,255,255,.14);padding:6px 12px;border-radius:99px"><span style="color:#9AA6B8">●</span> Offline — data lokal</span>
   <button class="btn btn-putih" id="btnBaru">+ Invoice Baru</button>
-  <button class="btn btn-putih" id="btnDashboard">📈 Dashboard</button>
+  <button class="btn btn-putih" id="btnDashboard">🧭 Pusat Kontrol</button>
   <button class="btn btn-biru" id="btnRiwayat">Riwayat</button>
   <button class="btn btn-biru" id="btnAktivitas">Aktivitas</button>
   <button class="btn btn-biru" id="btnRekap">📊 Rekap Dapur</button>
@@ -587,10 +603,10 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
   </div>
 </dialog>
 
-<!-- ============ DASHBOARD ============ -->
+<!-- ============ PUSAT KONTROL ============ -->
 <dialog id="dlgDashboard">
   <div class="dlg-kepala">
-    <b>📈 Dashboard Ringkasan</b>
+    <b>🧭 Pusat Kontrol</b>
     <button class="btn btn-putih" id="btnTutupDashboard">Tutup</button>
   </div>
   <div class="dlg-isi">
@@ -599,6 +615,13 @@ dialog::backdrop{background:rgba(10,18,40,.55)}
         <label for="dashPeriode">Periode</label>
         <select id="dashPeriode"></select>
       </div>
+    </div>
+    <div class="kontrol-tab" id="tabDashboard">
+      <button class="btn btn-putih aktif" data-kontrol-tab="ringkasan">Ringkasan Admin</button>
+      <button class="btn btn-putih" data-kontrol-tab="anomali">Anomali Harga</button>
+      <button class="btn btn-putih" data-kontrol-tab="standar">Standarisasi</button>
+      <button class="btn btn-putih" data-kontrol-tab="selisih">Selisih Dapur</button>
+      <button class="btn btn-putih" data-kontrol-tab="audit">Audit Revisi</button>
     </div>
     <div id="isiDashboard"></div>
   </div>
@@ -992,12 +1015,15 @@ function tutupSaranBarang(input){
 }
 function perbaruiInfoHargaPasar(input){
   const box=input?.closest('.item-nama-wrap')?.querySelector('.harga-pasar-input'); if(!box) return;
+  const unit=input.closest('tr')?.querySelector('input[data-k="unit"]')?.value||'';
+  const standar=standarBarang(input.value,unit);
+  const hint=standar.berubah&&input.value.trim()?`<div style="margin-bottom:6px"><b>Standar penulisan</b>${esc(standar.nama)} · ${esc(standar.unit)}</div>`:'';
   const key=kunciPasarDariNama(input.value);
-  if(!key){ box.hidden=true; box.innerHTML=''; return; }
-  if(hargaPasarMemuat&&!hargaPasar.length){ box.hidden=false; box.innerHTML='<b>Harga pasar resmi</b>Sedang mengambil data terbaru…'; return; }
+  if(!key){ box.hidden=!hint; box.innerHTML=hint; return; }
+  if(hargaPasarMemuat&&!hargaPasar.length){ box.hidden=false; box.innerHTML=hint+'<b>Harga pasar resmi</b>Sedang mengambil data terbaru…'; return; }
   const data=DAPUR_PASAR.map(dapur=>({dapur,harga:hargaPasarTerbaru(dapur,key)}));
-  if(!data.some(x=>x.harga)){ box.hidden=false; box.innerHTML='<b>Harga pasar resmi</b>Belum tersedia untuk barang ini.'; return; }
-  box.innerHTML=`<b>Harga pasar resmi · nama mengikuti sumber</b><div class="pasar-grid">${data.map(x=>`<div class="pasar-lokasi"><span>${esc(LABEL_DAPUR_PASAR[x.dapur].split(' · ')[0])}${x.harga?.pasar?.length?` · ${esc(x.harga.pasar.join(' & '))}`:''}</span>${x.harga?`<em>${esc(x.harga.nama)}</em>`:''}<strong>${x.harga?rupiah(Math.round(x.harga.nilai)):'—'}${x.harga?`/${esc(x.harga.unit)}`:''}</strong>${x.harga?`<span>${esc(tglIndo(x.harga.tanggal))}</span>`:''}</div>`).join('')}</div><div style="margin-top:4px;color:var(--abu)">Acuan wilayah; konfirmasi kembali sebelum menetapkan harga invoice.</div>`;
+  if(!data.some(x=>x.harga)){ box.hidden=false; box.innerHTML=hint+'<b>Harga pasar resmi</b>Belum tersedia untuk barang ini.'; return; }
+  box.innerHTML=hint+`<b>Harga pasar resmi · nama mengikuti sumber</b><div class="pasar-grid">${data.map(x=>`<div class="pasar-lokasi"><span>${esc(LABEL_DAPUR_PASAR[x.dapur].split(' · ')[0])}${x.harga?.pasar?.length?` · ${esc(x.harga.pasar.join(' & '))}`:''}</span>${x.harga?`<em>${esc(x.harga.nama)}</em>`:''}<strong>${x.harga?rupiah(Math.round(x.harga.nilai)):'—'}${x.harga?`/${esc(x.harga.unit)}`:''}</strong>${x.harga?`<span>${esc(tglIndo(x.harga.tanggal))}</span>`:''}</div>`).join('')}</div><div style="margin-top:4px;color:var(--abu)">Acuan wilayah; konfirmasi kembali sebelum menetapkan harga invoice.</div>`;
   box.hidden=false;
 }
 function perbaruiSemuaInfoHargaPasar(){
@@ -1028,6 +1054,10 @@ $('tbodyBarang').addEventListener('input', e=>{
         if(inpHarga) inpHarga.value = angkaID(h);
       }
     }
+  }else if(k==='unit'){
+    items[i].unit=el.value;
+    const inpNama=el.closest('tr')?.querySelector('input[data-k="name"]');
+    if(inpNama) perbaruiInfoHargaPasar(inpNama);
   }else{
     items[i][k] = el.value;
   }
@@ -1512,20 +1542,42 @@ $('btnRiwayat').addEventListener('click', ()=>{ renderRiwayat(); $('dlgRiwayat')
 $('btnTutupRiwayat').addEventListener('click', ()=>$('dlgRiwayat').close());
 
 const LABEL_AKTIVITAS={draft_created:'Draft dibuat',draft_updated:'Draft diperbarui',issued:'Invoice diterbitkan',revised:'Invoice direvisi',payment_status_changed:'Status pembayaran diubah',deleted:'Invoice dihapus',role_changed:'Peran staf diubah'};
+let aktivitasKontrol=[];
+async function muatAktivitasKontrol(){
+  if(!sb) return [];
+  const {data,error}=await sb.from('invoice_activity').select('invoice_id,action,actor_name,actor_email,details,created_at').order('created_at',{ascending:false}).limit(500);
+  if(error) throw error;
+  aktivitasKontrol=data||[]; return aktivitasKontrol;
+}
+function nilaiAudit(v,jenis){
+  if(v===null||v===undefined||v==='') return '—';
+  if(jenis==='total') return rupiah(Number(v)||0);
+  if(jenis==='tanggal') return tglIndo(String(v));
+  return String(v);
+}
+function perubahanRevisi(a){
+  const sebelum=a?.details?.before, sesudah=a?.details?.after;
+  if(!sebelum||!sesudah) return [];
+  const hasil=[], bidang=[['Tanggal','tanggal','tanggal'],['Dapur','pelanggan'],['Total','total','total'],['Status bayar','status'],['Catatan','catatan']];
+  bidang.forEach(([label,key,jenis])=>{ if(String(sebelum[key]??'')!==String(sesudah[key]??'')) hasil.push({label,dari:nilaiAudit(sebelum[key],jenis),ke:nilaiAudit(sesudah[key],jenis)}); });
+  const mapItems=arr=>{ const m=new Map(); (Array.isArray(arr)?arr:[]).forEach(it=>{ const s=standarBarang(it.name,it.unit), k=s.key; m.set(k,{nama:s.nama,unit:s.unit,qty:Number(it.qty)||0,price:Number(it.price)||0}); }); return m; };
+  const lama=mapItems(sebelum.items), baru=mapItems(sesudah.items);
+  new Set([...lama.keys(),...baru.keys()]).forEach(k=>{ const x=lama.get(k),y=baru.get(k); if(!x&&y) hasil.push({label:'Barang ditambah',dari:'—',ke:`${y.nama}: ${fmtQty(y.qty)} ${y.unit} × ${rupiah(y.price)}`}); else if(x&&!y) hasil.push({label:'Barang dihapus',dari:`${x.nama}: ${fmtQty(x.qty)} ${x.unit} × ${rupiah(x.price)}`,ke:'—'}); else if(x&&(x.qty!==y.qty||x.price!==y.price)) hasil.push({label:x.nama,dari:`${fmtQty(x.qty)} ${x.unit} × ${rupiah(x.price)}`,ke:`${fmtQty(y.qty)} ${y.unit} × ${rupiah(y.price)}`}); });
+  return hasil;
+}
+function htmlAktivitas(a){
+  const waktu=new Date(a.created_at).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'});
+  const target=a.details?.no || (a.invoice_id ? a.invoice_id : a.details?.email||'');
+  if(a.action!=='revised') return `<div class="item-riwayat"><div class="info"><b>${esc(LABEL_AKTIVITAS[a.action]||a.action)}</b><span>${esc(a.actor_name||'Staf')} · ${esc(waktu)}</span>${target?`<span>${esc(target)}</span>`:''}</div></div>`;
+  const perubahan=perubahanRevisi(a);
+  return `<details class="audit-revisi"><summary><b>${esc(LABEL_AKTIVITAS[a.action])}</b><div class="kecil">${esc(a.actor_name||'Staf')} · ${esc(waktu)}${target?` · ${esc(target)}`:''}</div></summary><div class="audit-isi">${perubahan.length?`<div class="audit-perubahan"><b>Perubahan</b><b>Sebelum</b><b>Sesudah</b></div>${perubahan.map(p=>`<div class="audit-perubahan"><b>${esc(p.label)}</b><span>${esc(p.dari)}</span><span>${esc(p.ke)}</span></div>`).join('')}`:'<div class="kecil">Detail sebelum–sesudah belum tersedia untuk revisi lama.</div>'}</div></details>`;
+}
 async function renderAktivitas(){
   const wadah=$('isiAktivitas');
   wadah.innerHTML='<div class="kosong">Memuat aktivitas…</div>';
   if(!sb){ wadah.innerHTML='<div class="kosong">Harus online untuk melihat aktivitas.</div>'; return; }
-  const {data,error}=await sb.from('invoice_activity').select('invoice_id,action,actor_name,actor_email,details,created_at').order('created_at',{ascending:false}).limit(200);
-  if(error){ wadah.innerHTML=`<div class="kosong">${esc(error.message)}</div>`; return; }
-  if(!data?.length){ wadah.innerHTML='<div class="kosong">Belum ada aktivitas tercatat.</div>'; return; }
-  wadah.innerHTML=data.map(a=>{
-    const waktu=new Date(a.created_at).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'});
-    const target=a.details?.no || (a.invoice_id ? a.invoice_id : a.details?.email||'');
-    return `<div class="item-riwayat"><div class="info"><b>${esc(LABEL_AKTIVITAS[a.action]||a.action)}</b>
-      <span>${esc(a.actor_name||'Staf')} · ${esc(waktu)}</span>
-      ${target?`<span>${esc(target)}</span>`:''}</div></div>`;
-  }).join('');
+  try{ const data=await muatAktivitasKontrol(); if(!data.length){ wadah.innerHTML='<div class="kosong">Belum ada aktivitas tercatat.</div>'; return; } wadah.innerHTML=data.slice(0,200).map(htmlAktivitas).join(''); }
+  catch(error){ wadah.innerHTML=`<div class="kosong">${esc(error.message)}</div>`; }
 }
 $('btnAktivitas').addEventListener('click',async()=>{ $('dlgAktivitas').showModal(); await renderAktivitas(); });
 $('btnTutupAktivitas').addEventListener('click',()=>$('dlgAktivitas').close());
@@ -1722,6 +1774,24 @@ function normalProdukHarga(v,unit){
 function normalSatuanHarga(v){
   const unit=normalHargaTeks(v).replace(/[^\p{L}\p{N}]+/gu,'');
   return SATUAN_HARGA[unit]||unit||'-';
+}
+const SATUAN_STANDAR={kg:'kg',kilogram:'kg',kilo:'kg',gr:'gram',g:'gram',gram:'gram',pc:'pcs',pcs:'pcs',buah:'pcs',biji:'pcs',pck:'pack',pak:'pack',pack:'pack',btl:'botol',botol:'botol',ltr:'liter',lt:'liter',l:'liter',liter:'liter',dus:'dus',box:'dus',karton:'dus',krat:'krat',crate:'krat',tabung:'tabung',jrgn:'jerigen',jerigen:'jerigen',ppn:'papan',papa:'papan',papan:'papan',pch:'pouch',pouch:'pouch'};
+function standarSatuan(v){
+  const u=normalHargaTeks(v).replace(/[^\p{L}\p{N}]+/gu,'');
+  return SATUAN_STANDAR[u]||u||'-';
+}
+function judulBarang(v){
+  return String(v||'').split(' ').filter(Boolean).map(k=>/^(?:kg|pcs|ml|liter|pack|dus|krat|2l|1kg)$/i.test(k)?k.toLowerCase():k.charAt(0).toLocaleUpperCase('id-ID')+k.slice(1)).join(' ');
+}
+function standarBarang(nama,unit){
+  const asliNama=String(nama||'').trim(), asliUnit=String(unit||'').trim();
+  let n=normalNamaHarga(asliNama), u=standarSatuan(asliUnit);
+  // Aturan sengaja konservatif: jenis, merek, ukuran, dan bentuk produk tetap dibedakan.
+  n=n.replace(/\b(telu r|te lur)\b/g,'telur').replace(/\bsaos\b/g,'saus').replace(/\bcoklat\b/g,'cokelat');
+  const key=`${n.split(' ').filter(Boolean).sort((a,b)=>a.localeCompare(b,'id')).join(' ')}|${u}`;
+  const namaStandar=judulBarang(n);
+  const berubah=normalHargaTeks(asliNama)!==normalHargaTeks(namaStandar)||normalHargaTeks(asliUnit)!==u;
+  return {key,nama:namaStandar||asliNama||'(tanpa nama)',unit:u,berubah};
 }
 function kataKunciHarga(v,unit){
   const kata=normalProdukHarga(v,unit).split(' ').filter(Boolean).sort((a,b)=>a.localeCompare(b,'id'));
@@ -2075,60 +2145,61 @@ function kartu(judul, nilai, warna, sub){
     <b style="font-size:19px;color:${warna||'var(--navy)'}">${nilai}</b>
     ${sub?`<div class="kecil" style="margin-top:2px">${sub}</div>`:''}</div>`;
 }
-function renderDashboard(){
-  const periode=$('dashPeriode').value;
-  const d=hitungDashboard(periode);
-  const wadah=$('isiDashboard');
-  if(d.inv.length===0){ wadah.innerHTML='<div class="kosong">Belum ada invoice pada periode ini.</div>'; return; }
-  let h='';
-  // kartu ringkasan
-  const rata = d.inv.length ? Math.round(d.total/d.inv.length) : 0;
-  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-    ${kartu('Total Invoice', d.inv.length, 'var(--navy)')}
-    ${kartu('Total Penjualan', rupiah(d.total), 'var(--navy)')}
-    ${kartu('Rata-rata / Invoice', rupiah(rata), 'var(--navy)')}
-    ${kartu('Jumlah Dapur', d.dapurArr.length, 'var(--navy)')}
-  </div>`;
-  // ringkasan pembayaran (internal)
-  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-    ${kartu('🟢 Lunas', rupiah(d.stNilai.Lunas), '#1a7f3c', d.st.Lunas+' invoice')}
-    ${kartu('🟡 Sebagian', rupiah(d.stNilai.Sebagian), '#b8860b', d.st.Sebagian+' invoice')}
-    ${kartu('🔴 Belum Bayar', rupiah(d.stNilai.Belum), '#c0392b', d.st.Belum+' invoice')}
-  </div>`;
-  // bar proporsi pembayaran
-  const totNilai=d.total||1;
-  const pL=Math.round(d.stNilai.Lunas/totNilai*100), pS=Math.round(d.stNilai.Sebagian/totNilai*100), pB=100-pL-pS;
-  h+=`<div class="panel" style="margin-bottom:12px"><h2>Proporsi Pembayaran (nilai)</h2>
-    <div style="display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--garis)">
-      <div style="width:${pL}%;background:#2fa84f"></div>
-      <div style="width:${pS}%;background:#e0b020"></div>
-      <div style="width:${pB}%;background:#d0524a"></div>
-    </div>
-    <div class="kecil" style="margin-top:6px">🟢 Lunas ${pL}% &nbsp; 🟡 Sebagian ${pS}% &nbsp; 🔴 Belum ${pB}%</div></div>`;
-  // per dapur
-  h+=`<div class="panel" style="margin-bottom:12px"><h2>Penjualan per Dapur</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-    <tr style="text-align:left;color:var(--abu)"><th style="padding:4px">Dapur</th><th style="text-align:right">Invoice</th><th style="text-align:right">Total</th></tr>`;
-  const maxD=d.dapurArr[0]?d.dapurArr[0].total:1;
-  d.dapurArr.forEach(x=>{ h+=`<tr style="border-top:1px solid var(--garis)">
-    <td style="padding:4px">${esc(x.nama)}<div style="height:5px;background:linear-gradient(90deg,var(--biru) ${Math.round(x.total/maxD*100)}%, #eee ${Math.round(x.total/maxD*100)}%);border-radius:3px;margin-top:3px"></div></td>
-    <td style="text-align:right">${x.jml}</td>
-    <td style="text-align:right;font-variant-numeric:tabular-nums">${rupiah(x.total)}</td></tr>`; });
-  h+=`</table></div>`;
-  // barang terlaris
-  h+=`<div class="panel"><h2>10 Barang Nilai Tertinggi</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-    <tr style="text-align:left;color:var(--abu)"><th style="padding:4px">Barang</th><th style="text-align:right">Total Qty</th><th style="text-align:right">Total Nilai</th></tr>`;
-  d.brgArr.forEach(bg=>{ h+=`<tr style="border-top:1px solid var(--garis)">
-    <td style="padding:4px">${esc(bg.nama)}</td>
-    <td style="text-align:right">${fmtQty(bg.qty)} ${esc(bg.unit)}</td>
-    <td style="text-align:right;font-variant-numeric:tabular-nums">${rupiah(bg.nilai)}</td></tr>`; });
-  h+=`</table></div>`;
-  wadah.innerHTML=h;
+let kontrolTabAktif='ringkasan';
+function medianKontrol(arr){ const a=arr.filter(Number.isFinite).sort((x,y)=>x-y); if(!a.length)return 0; const m=Math.floor(a.length/2); return a.length%2?a[m]:(a[m-1]+a[m])/2; }
+function poinKontrol(inv){
+  const hasil=[];
+  inv.forEach(x=>(x.items||[]).forEach(it=>{ const harga=Number(it.price)||0, qty=Number(it.qty)||0; if(!harga||!(it.name||'').trim())return; const s=standarBarang(it.name,it.unit); hasil.push({key:s.key,nama:s.nama,unit:s.unit,namaAsli:(it.name||'').trim(),unitAsli:(it.unit||'').trim(),harga,qty,nilai:harga*qty,dapur:(x.pelanggan||'').trim()||'(tanpa nama)',tanggal:x.tanggal||'',no:x.no||'',invoiceId:x.id||''}); }));
+  return hasil;
 }
-$('btnDashboard').addEventListener('click', ()=>{ isiPilihanPeriode(); renderDashboard(); $('dlgDashboard').showModal(); });
+function kelompokKontrol(poin){ const m=new Map(); poin.forEach(p=>{ if(!m.has(p.key))m.set(p.key,[]); m.get(p.key).push(p); }); return m; }
+function kandidatDuplikat(inv){
+  const m=new Map(); inv.forEach(x=>{ const isi=(x.items||[]).map(it=>{const s=standarBarang(it.name,it.unit);return `${s.key}:${Number(it.qty)||0}:${Number(it.price)||0}`}).sort().join(';'); const k=`${x.tanggal}|${normalHargaTeks(x.pelanggan)}|${Number(x.total)||0}|${isi}`; if(!m.has(k))m.set(k,[]);m.get(k).push(x); });
+  return [...m.values()].filter(x=>x.length>1);
+}
+function dataAnomali(inv){
+  const poin=poinKontrol(inv), kelompok=kelompokKontrol(poin), hasil=[];
+  kelompok.forEach(baris=>{
+    if(baris.length<3)return; const tengah=medianKontrol(baris.map(x=>x.harga)); if(!tengah)return;
+    baris.forEach(p=>{ const persen=Math.round((p.harga-tengah)/tengah*100); if(Math.abs(persen)>=25) hasil.push({...p,acuan:tengah,persen,alasan:`${persen>0?'Lebih tinggi':'Lebih rendah'} dari median transaksi`}); });
+    const unitDapur=new Map(); baris.forEach(p=>{if(!unitDapur.has(p.dapur))unitDapur.set(p.dapur,[]);unitDapur.get(p.dapur).push(p.harga)});
+    if(unitDapur.size>1){ const rata=[...unitDapur].map(([d,a])=>({d,h:medianKontrol(a)})).sort((a,b)=>b.h-a.h), rendah=rata[rata.length-1], selisih=Math.round((rata[0].h-rendah.h)/(rendah.h||1)*100); if(selisih>=20) hasil.push({...baris[0],dapur:rata[0].d,harga:rata[0].h,acuan:rendah.h,persen:selisih,alasan:`Median ${rata[0].d} dibanding ${rendah.d}`}); }
+  });
+  return hasil.sort((a,b)=>Math.abs(b.persen)-Math.abs(a.persen));
+}
+function dataStandar(inv){
+  const m=new Map(); poinKontrol(inv).forEach(p=>{ if(!m.has(p.key))m.set(p.key,{nama:p.nama,unit:p.unit,varian:new Map(),jumlah:0,nilai:0}); const x=m.get(p.key), label=`${p.namaAsli} · ${p.unitAsli||'-'}`; x.varian.set(label,(x.varian.get(label)||0)+1);x.jumlah++;x.nilai+=p.nilai; });
+  return [...m.values()].map(x=>({...x,varianArr:[...x.varian].sort((a,b)=>b[1]-a[1])})).filter(x=>x.varian.size>1||x.varianArr.some(([v])=>normalHargaTeks(v)!==normalHargaTeks(`${x.nama} · ${x.unit}`))).sort((a,b)=>b.jumlah-a.jumlah);
+}
+function kategoriKontrol(nama){ const n=normalHargaTeks(nama); const aturan=[['Ayam',/ayam|chicken/],['Beras',/beras/],['Telur',/telur/],['Minyak',/minyak/],['Buah',/pisang|apel|jeruk|melon|semangka|pepaya|nanas|anggur|buah/],['Sayur',/bayam|kol|wortel|buncis|labu|sawi|pakcoy|kangkung|tomat|timun|kentang|sayur/],['Bumbu',/bawang|cabai|lada|kunyit|jahe|lengkuas|sereh|garam|gula|saus|kecap|bumbu|kaldu/],['Tahu & Tempe',/tahu|tempe/],['Operasional',/sabun|tisu|plastik|masker|sarung tangan|label|rapia|korek/]]; return (aturan.find(x=>x[1].test(n))||['Lainnya'])[0]; }
+function dataSelisih(inv){
+  const per={}; poinKontrol(inv).forEach(p=>{ if(!per[p.dapur])per[p.dapur]={total:0,kat:{},item:{}}; const x=per[p.dapur],k=kategoriKontrol(p.nama);x.total+=p.nilai;x.kat[k]=(x.kat[k]||0)+p.nilai;x.item[p.nama]=(x.item[p.nama]||0)+p.nilai; });
+  const urut=Object.entries(per).map(([nama,v])=>({nama,...v})).sort((a,b)=>b.total-a.total); if(urut.length<2)return {urut,drivers:[],items:[],gap:0,rataLain:0};
+  const atas=urut[0], lain=urut.slice(1), rataLain=lain.reduce((s,x)=>s+x.total,0)/lain.length, kategori=new Set([...Object.keys(atas.kat),...lain.flatMap(x=>Object.keys(x.kat))]);
+  const drivers=[...kategori].map(k=>{const r=lain.reduce((s,x)=>s+(x.kat[k]||0),0)/lain.length;return {nama:k,atas:atas.kat[k]||0,lain:r,selisih:(atas.kat[k]||0)-r}}).filter(x=>x.selisih>0).sort((a,b)=>b.selisih-a.selisih);
+  const namaItems=new Set([...Object.keys(atas.item),...lain.flatMap(x=>Object.keys(x.item))]), items=[...namaItems].map(k=>{const r=lain.reduce((s,x)=>s+(x.item[k]||0),0)/lain.length;return {nama:k,atas:atas.item[k]||0,lain:r,selisih:(atas.item[k]||0)-r}}).filter(x=>x.selisih>0).sort((a,b)=>b.selisih-a.selisih).slice(0,12);
+  return {urut,atas,drivers,items,gap:atas.total-rataLain,rataLain};
+}
+function renderRingkasanKontrol(d){
+  const anom=dataAnomali(d.inv), duplikat=kandidatDuplikat(d.inv), sel=dataSelisih(d.inv), revisi=aktivitasKontrol.filter(a=>a.action==='revised'&&($('dashPeriode').value==='_semua'||String(a.created_at).slice(0,7)===$('dashPeriode').value)).length, rata=d.inv.length?Math.round(d.total/d.inv.length):0;
+  let perhatian=[]; if(d.st.Belum)perhatian.push(`${d.st.Belum} invoice belum berstatus lunas`); if(anom.length)perhatian.push(`${anom.length} harga perlu ditinjau`); if(duplikat.length)perhatian.push(`${duplikat.length} kelompok invoice berpotensi duplikat`); if(!perhatian.length)perhatian.push('Tidak ada peringatan utama pada periode ini');
+  return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kartu('Total Invoice',d.inv.length,'var(--navy)')}${kartu('Total Belanja',rupiah(d.total),'var(--navy)')}${kartu('Rata-rata / Invoice',rupiah(rata),'var(--navy)')}${kartu('Revisi Tercatat',revisi,'var(--navy)')}</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kartu('🟢 Lunas',rupiah(d.stNilai.Lunas),'#1a7f3c',d.st.Lunas+' invoice')}${kartu('🔴 Belum Lunas',rupiah((d.stNilai.Belum||0)+(d.stNilai.Sebagian||0)),'#c0392b',(d.st.Belum+d.st.Sebagian)+' invoice')}${kartu('⚠ Anomali Harga',anom.length,anom.length?'#c0392b':'#1a7f3c')}${kartu('Duplikat Potensial',duplikat.length,duplikat.length?'#b8860b':'#1a7f3c')}</div><div class="panel" style="margin-bottom:12px"><h2>Ringkasan Otomatis</h2><div class="kontrol-note">${sel.atas?`Dapur dengan nilai belanja tertinggi adalah <b>${esc(sel.atas.nama)}</b> sebesar <b>${rupiah(sel.atas.total)}</b>, selisih <b>${rupiah(sel.gap)}</b> dari rata-rata dapur lain. `:''}${perhatian.map(x=>`<span style="display:block">• ${esc(x)}</span>`).join('')}</div></div>${htmlTabelDapur(d.dapurArr)}`;
+}
+function htmlTabelDapur(arr){ return `<div class="panel"><h2>Belanja per Dapur</h2><table class="kontrol-table"><tr><th>Dapur</th><th class="r">Invoice</th><th class="r">Total</th></tr>${arr.map(x=>`<tr><td>${esc(x.nama)}</td><td class="r">${x.jml}</td><td class="r">${rupiah(x.total)}</td></tr>`).join('')}</table></div>`; }
+function renderAnomaliKontrol(d){ const data=dataAnomali(d.inv), dup=kandidatDuplikat(d.inv); return `<div class="kontrol-note" style="margin-bottom:12px">Ditandai bila harga satuan berbeda minimal 25% dari median barang standar yang sama. Ini adalah daftar pemeriksaan, bukan keputusan otomatis.</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${kartu('Harga Perlu Ditinjau',data.length,data.length?'#c0392b':'#1a7f3c')}${kartu('Invoice Mirip Persis',dup.length,dup.length?'#b8860b':'#1a7f3c')}</div><div class="panel" style="margin-bottom:12px"><h2>Daftar Anomali</h2>${data.length?`<table class="kontrol-table"><tr><th>Barang</th><th>Dapur / Invoice</th><th class="r">Harga</th><th class="r">Acuan</th><th class="r">Selisih</th><th>Alasan</th></tr>${data.slice(0,150).map(x=>`<tr><td>${esc(x.nama)} · ${esc(x.unit)}</td><td>${esc(x.dapur)}<div class="kecil">${esc(x.no)}</div></td><td class="r">${rupiah(x.harga)}</td><td class="r">${rupiah(x.acuan)}</td><td class="r"><span class="badge-kontrol ${Math.abs(x.persen)>=50?'merah':'kuning'}">${x.persen>0?'+':''}${x.persen}%</span></td><td>${esc(x.alasan)}</td></tr>`).join('')}</table>`:'<div class="kosong">Tidak ada harga yang melewati ambang pemeriksaan.</div>'}</div><div class="panel"><h2>Kandidat Invoice Duplikat</h2>${dup.length?dup.map(g=>`<div class="item-riwayat"><div class="info"><b>${esc(g.map(x=>x.no).join(' · '))}</b><span>${esc(g[0].pelanggan)} · ${tglIndo(g[0].tanggal)} · ${rupiah(g[0].total)}</span></div></div>`).join(''):'<div class="kosong">Tidak ada invoice yang isinya sama persis.</div>'}</div>`; }
+function renderStandarKontrol(d){ const data=dataStandar(d.inv); return `<div class="kontrol-note" style="margin-bottom:12px">Riwayat tidak diubah otomatis. Sistem menampilkan nama dan satuan standar saat mengetik, sementara jenis, merek, ukuran, frozen/fillet, dan kemasan tetap dipisahkan.</div><div class="panel"><h2>Usulan Standarisasi</h2>${data.length?`<table class="kontrol-table"><tr><th>Nama & satuan standar</th><th>Variasi ditemukan</th><th class="r">Pemakaian</th><th class="r">Nilai</th></tr>${data.slice(0,200).map(x=>`<tr><td><b>${esc(x.nama)}</b> · ${esc(x.unit)}</td><td>${x.varianArr.map(([v,n])=>`${esc(v)} <span class="badge-kontrol">${n}×</span>`).join('<br>')}</td><td class="r">${x.jumlah}</td><td class="r">${rupiah(x.nilai)}</td></tr>`).join('')}</table>`:'<div class="kosong">Semua penulisan pada periode ini sudah konsisten.</div>'}</div>`; }
+function renderSelisihKontrol(d){ const x=dataSelisih(d.inv); if(x.urut.length<2)return '<div class="kosong">Perlu minimal dua dapur untuk membandingkan.</div>'; const totalGap=x.gap||1; return `<div class="kontrol-note" style="margin-bottom:12px"><b>${esc(x.atas.nama)}</b> lebih tinggi ${rupiah(x.gap)} dari rata-rata dapur lain. Kontributor di bawah dihitung dari nilai barang (jumlah × harga), sehingga mencakup perbedaan volume dan harga.</div><div class="panel" style="margin-bottom:12px"><h2>Penyebab Utama per Kategori</h2><table class="kontrol-table"><tr><th>Kategori</th><th class="r">${esc(x.atas.nama)}</th><th class="r">Rata-rata lain</th><th class="r">Kontribusi selisih</th></tr>${x.drivers.map(y=>`<tr><td>${esc(y.nama)}</td><td class="r">${rupiah(y.atas)}</td><td class="r">${rupiah(y.lain)}</td><td class="r"><b>${rupiah(y.selisih)}</b> · ${Math.round(y.selisih/totalGap*100)}%</td></tr>`).join('')}</table></div><div class="panel"><h2>Barang Pendorong Selisih</h2><table class="kontrol-table"><tr><th>Barang</th><th class="r">${esc(x.atas.nama)}</th><th class="r">Rata-rata lain</th><th class="r">Selisih</th></tr>${x.items.map(y=>`<tr><td>${esc(y.nama)}</td><td class="r">${rupiah(y.atas)}</td><td class="r">${rupiah(y.lain)}</td><td class="r">${rupiah(y.selisih)}</td></tr>`).join('')}</table></div>`; }
+function renderAuditKontrol(){ const p=$('dashPeriode').value, data=aktivitasKontrol.filter(a=>a.action==='revised'&&(p==='_semua'||String(a.created_at).slice(0,7)===p)); return `<div class="kontrol-note" style="margin-bottom:12px">Revisi baru menyimpan siapa, kapan, serta nilai sebelum dan sesudah. Revisi lama tetap tercatat, tetapi mungkin belum memiliki rincian perubahan.</div>${data.length?data.map(htmlAktivitas).join(''):'<div class="kosong">Belum ada revisi pada periode ini.</div>'}`; }
+function renderDashboard(){
+  const d=hitungDashboard($('dashPeriode').value), wadah=$('isiDashboard');
+  document.querySelectorAll('[data-kontrol-tab]').forEach(b=>b.classList.toggle('aktif',b.dataset.kontrolTab===kontrolTabAktif));
+  if(d.inv.length===0&&kontrolTabAktif!=='audit'){wadah.innerHTML='<div class="kosong">Belum ada invoice pada periode ini.</div>';return;}
+  const renderer={ringkasan:renderRingkasanKontrol,anomali:renderAnomaliKontrol,standar:renderStandarKontrol,selisih:renderSelisihKontrol,audit:renderAuditKontrol}[kontrolTabAktif]; wadah.innerHTML=renderer(d);
+}
+$('btnDashboard').addEventListener('click', async()=>{ isiPilihanPeriode(); $('dlgDashboard').showModal(); $('isiDashboard').innerHTML='<div class="kosong">Menyiapkan pusat kontrol…</div>'; try{await muatAktivitasKontrol();}catch(e){} renderDashboard(); });
 $('btnTutupDashboard').addEventListener('click', ()=>$('dlgDashboard').close());
 $('dashPeriode').addEventListener('change', renderDashboard);
+$('tabDashboard').addEventListener('click',e=>{const b=e.target.closest('[data-kontrol-tab]');if(!b)return;kontrolTabAktif=b.dataset.kontrolTab;renderDashboard();});
 
 /* ================== FORM BARU / ISI ================== */
 function isiForm(inv, nomorBaru){

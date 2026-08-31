@@ -439,7 +439,17 @@ begin
     if v_old.id is not null and v_old.id<>v_source.id and v_old.workflow_status='draft' then
       delete from public.invoices where id=v_old.id;
     end if;
-    perform private.log_invoice_activity(v_source.id,'revised',jsonb_build_object('no',v_source.no,'draft_id',v_id));
+    perform private.log_invoice_activity(v_source.id,'revised',jsonb_build_object(
+      'no',v_source.no,'draft_id',v_id,
+      'before',jsonb_build_object(
+        'tanggal',v_source.tanggal,'pelanggan',v_source.pelanggan,'total',v_source.total,
+        'items',coalesce(v_source.data->'items','[]'::jsonb),'status',v_source.data->>'status',
+        'catatan',v_source.data->>'catatan'),
+      'after',jsonb_build_object(
+        'tanggal',v_tanggal,'pelanggan',coalesce(v_data->>'pelanggan',''),
+        'total',coalesce(nullif(v_data->>'total','')::bigint,0),
+        'items',coalesce(v_data->'items','[]'::jsonb),'status',v_data->>'status',
+        'catatan',v_data->>'catatan')));
     return v_data;
   end if;
 
