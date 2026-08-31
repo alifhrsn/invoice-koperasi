@@ -1891,6 +1891,7 @@ const LABEL_DAPUR_PASAR={
   'SPPG CIMANGGIS':'Cimanggis · Kota Depok'
 };
 let hargaPasar=[], hargaPasarMemuat=false, hargaPasarPesan='Harga pasar belum dimuat.';
+const cacheKunciPasarAcuan=new Map(), cacheHargaPasarTanggal=new Map();
 function rataHarga(poin){ return poin.length?poin.reduce((s,x)=>s+x.harga,0)/poin.length:null; }
 function dataPeriodeHarga(item,mulai,selesai){
   const poin=(item?.poin||[]).filter(x=>x.tanggal>=mulai&&x.tanggal<=selesai);
@@ -2041,10 +2042,11 @@ async function muatHargaPasar(perbarui=true){
     const tarikCache=async()=>{
       const {data,error}=await sb.from('market_prices').select('price_date,dapur,region_name,region_level,source_name,source_url,market_name,commodity_key,commodity_name,unit,price,fetched_at').gte('price_date',sejak.toISOString().slice(0,10)).order('price_date',{ascending:false});
       if(error) throw error;
-      hargaPasar=data||[];
+      hargaPasar=data||[]; cacheKunciPasarAcuan.clear(); cacheHargaPasarTanggal.clear();
     };
     await tarikCache();
     renderAnalisisHarga(); perbaruiSemuaInfoHargaPasar();
+    if($('dlgDashboard')?.open) renderDashboard();
     if(perbarui){
       const hasil=await sb.functions.invoke('sync-market-prices',{body:{}});
       if(hasil.error) pesan.push('Pembaruan gagal; menampilkan cache terakhir.');
@@ -2056,6 +2058,7 @@ async function muatHargaPasar(perbarui=true){
     pesan.push(hargaPasar.length?`${hargaPasar.length} referensi harga resmi termuat.`:'Belum ada harga pasar resmi tersimpan.');
   }catch(e){ pesan.push(e.message||'Harga pasar gagal dimuat.'); }
   hargaPasarMemuat=false; hargaPasarPesan=pesan.join(' '); renderAnalisisHarga(); perbaruiSemuaInfoHargaPasar();
+  if($('dlgDashboard')?.open) renderDashboard();
 }
 function renderAnalisisHarga(){
   const wadah=$('isiHarga'), d=hitungAnalisisHarga();
@@ -2157,13 +2160,42 @@ function kandidatDuplikat(inv){
   const m=new Map(); inv.forEach(x=>{ const isi=(x.items||[]).map(it=>{const s=standarBarang(it.name,it.unit);return `${s.key}:${Number(it.qty)||0}:${Number(it.price)||0}`}).sort().join(';'); const k=`${x.tanggal}|${normalHargaTeks(x.pelanggan)}|${Number(x.total)||0}|${isi}`; if(!m.has(k))m.set(k,[]);m.get(k).push(x); });
   return [...m.values()].filter(x=>x.length>1);
 }
+function kunciPasarAcuan(nama){
+  const n=normalNamaHarga(nama); if(!n)return null;
+  if(cacheKunciPasarAcuan.has(n))return cacheKunciPasarAcuan.get(n);
+  const persis=new Set(hargaPasar.filter(x=>normalNamaHarga(x.commodity_name)===n).map(x=>x.commodity_key));
+  if(persis.size===1){const hasil=[...persis][0];cacheKunciPasarAcuan.set(n,hasil);return hasil;}
+  const alias=new Set(Object.entries(ALIAS_INPUT_PASAR).filter(([,label])=>normalNamaHarga(label)===n).map(([key])=>key));
+  const hasil=alias.size===1?[...alias][0]:null; cacheKunciPasarAcuan.set(n,hasil); return hasil;
+}
+function hargaPasarPadaTanggal(dapur,key,tanggalInvoice){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(tanggalInvoice||'')))return null;
+  const cacheKey=`${dapur}|${key}|${tanggalInvoice}`; if(cacheHargaPasarTanggal.has(cacheKey))return cacheHargaPasarTanggal.get(cacheKey);
+  const semua=hargaPasar.filter(x=>x.dapur===dapur&&x.commodity_key===key&&x.price_date<=tanggalInvoice);
+  if(!semua.length){cacheHargaPasarTanggal.set(cacheKey,null);return null;}
+  const tanggal=semua.reduce((m,x)=>x.price_date>m?x.price_date:m,'');
+  let rows=semua.filter(x=>x.price_date===tanggal);
+  if(rows.some(x=>x.market_name))rows=rows.filter(x=>x.market_name);
+  const angka=rows.map(x=>Number(x.price)||0).filter(Boolean); if(!angka.length){cacheHargaPasarTanggal.set(cacheKey,null);return null;}
+  const nama=[...new Set(rows.map(x=>x.commodity_name).filter(Boolean))], pasar=[...new Set(rows.map(x=>x.market_name).filter(Boolean))];
+  const selisihHari=Math.max(0,Math.round((new Date(tanggalInvoice+'T12:00:00+07:00')-new Date(tanggal+'T12:00:00+07:00'))/86400000));
+  const hasil={tanggal,nilai:angka.reduce((a,b)=>a+b,0)/angka.length,unit:standarSatuan(rows[0].unit),nama:nama.join(' / '),source:rows[0].source_name||'',pasar,selisihHari}; cacheHargaPasarTanggal.set(cacheKey,hasil); return hasil;
+}
 function dataAnomali(inv){
   const poin=poinKontrol(inv), kelompok=kelompokKontrol(poin), hasil=[];
   kelompok.forEach(baris=>{
-    if(baris.length<3)return; const tengah=medianKontrol(baris.map(x=>x.harga)); if(!tengah)return;
-    baris.forEach(p=>{ const persen=Math.round((p.harga-tengah)/tengah*100); if(Math.abs(persen)>=25) hasil.push({...p,acuan:tengah,persen,alasan:`${persen>0?'Lebih tinggi':'Lebih rendah'} dari median transaksi`}); });
     const unitDapur=new Map(); baris.forEach(p=>{if(!unitDapur.has(p.dapur))unitDapur.set(p.dapur,[]);unitDapur.get(p.dapur).push(p.harga)});
-    if(unitDapur.size>1){ const rata=[...unitDapur].map(([d,a])=>({d,h:medianKontrol(a)})).sort((a,b)=>b.h-a.h), rendah=rata[rata.length-1], selisih=Math.round((rata[0].h-rendah.h)/(rendah.h||1)*100); if(selisih>=20) hasil.push({...baris[0],dapur:rata[0].d,harga:rata[0].h,acuan:rendah.h,persen:selisih,alasan:`Median ${rata[0].d} dibanding ${rendah.d}`}); }
+    if(unitDapur.size>1){
+      const perDapur=[...unitDapur].map(([d,a])=>({d,h:medianKontrol(a),jumlah:a.length}));
+      perDapur.forEach(x=>{ const lain=perDapur.filter(y=>y.d!==x.d).map(y=>y.h), acuan=medianKontrol(lain); if(!acuan)return; const persen=Math.round((x.h-acuan)/acuan*100); if(Math.abs(persen)>=20)hasil.push({...baris[0],jenis:'antar_dapur',dapur:x.d,harga:x.h,acuan,persen,no:`${x.jumlah} transaksi`,tanggalAcuan:'',sumber:'Median dapur lain',alasan:`Median ${x.d} dibanding median dapur lain`}); });
+    }
+  });
+  poin.forEach(p=>{
+    const key=kunciPasarAcuan(p.namaAsli); if(!key)return;
+    const pasar=hargaPasarPadaTanggal(p.dapur,key,p.tanggal); if(!pasar||pasar.unit!==p.unit||!pasar.nilai)return;
+    const persen=Math.round((p.harga-pasar.nilai)/pasar.nilai*100); if(Math.abs(persen)<20)return;
+    const lokasi=LABEL_DAPUR_PASAR[p.dapur]||p.dapur, namaSumber=pasar.pasar.length?pasar.pasar.join(' & '):pasar.source;
+    hasil.push({...p,jenis:'pasar_setempat',acuan:pasar.nilai,persen,tanggalAcuan:pasar.tanggal,sumber:namaSumber,namaAcuan:pasar.nama,alasan:`${persen>0?'Lebih tinggi':'Lebih rendah'} dari pasar ${lokasi}${pasar.selisihHari?` (${pasar.selisihHari} hari sebelum invoice)`:''}`});
   });
   return hasil.sort((a,b)=>Math.abs(b.persen)-Math.abs(a.persen));
 }
@@ -2181,12 +2213,19 @@ function dataSelisih(inv){
   return {urut,atas,drivers,items,gap:atas.total-rataLain,rataLain};
 }
 function renderRingkasanKontrol(d){
-  const anom=dataAnomali(d.inv), duplikat=kandidatDuplikat(d.inv), sel=dataSelisih(d.inv), revisi=aktivitasKontrol.filter(a=>a.action==='revised'&&($('dashPeriode').value==='_semua'||String(a.created_at).slice(0,7)===$('dashPeriode').value)).length, rata=d.inv.length?Math.round(d.total/d.inv.length):0;
-  let perhatian=[]; if(d.st.Belum)perhatian.push(`${d.st.Belum} invoice belum berstatus lunas`); if(anom.length)perhatian.push(`${anom.length} harga perlu ditinjau`); if(duplikat.length)perhatian.push(`${duplikat.length} kelompok invoice berpotensi duplikat`); if(!perhatian.length)perhatian.push('Tidak ada peringatan utama pada periode ini');
-  return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kartu('Total Invoice',d.inv.length,'var(--navy)')}${kartu('Total Belanja',rupiah(d.total),'var(--navy)')}${kartu('Rata-rata / Invoice',rupiah(rata),'var(--navy)')}${kartu('Revisi Tercatat',revisi,'var(--navy)')}</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kartu('🟢 Lunas',rupiah(d.stNilai.Lunas),'#1a7f3c',d.st.Lunas+' invoice')}${kartu('🔴 Belum Lunas',rupiah((d.stNilai.Belum||0)+(d.stNilai.Sebagian||0)),'#c0392b',(d.st.Belum+d.st.Sebagian)+' invoice')}${kartu('⚠ Anomali Harga',anom.length,anom.length?'#c0392b':'#1a7f3c')}${kartu('Duplikat Potensial',duplikat.length,duplikat.length?'#b8860b':'#1a7f3c')}</div><div class="panel" style="margin-bottom:12px"><h2>Ringkasan Otomatis</h2><div class="kontrol-note">${sel.atas?`Dapur dengan nilai belanja tertinggi adalah <b>${esc(sel.atas.nama)}</b> sebesar <b>${rupiah(sel.atas.total)}</b>, selisih <b>${rupiah(sel.gap)}</b> dari rata-rata dapur lain. `:''}${perhatian.map(x=>`<span style="display:block">• ${esc(x)}</span>`).join('')}</div></div>${htmlTabelDapur(d.dapurArr)}`;
+  const anom=dataAnomali(d.inv), antar=anom.filter(x=>x.jenis==='antar_dapur'), pasar=anom.filter(x=>x.jenis==='pasar_setempat'), duplikat=kandidatDuplikat(d.inv), sel=dataSelisih(d.inv), revisi=aktivitasKontrol.filter(a=>a.action==='revised'&&($('dashPeriode').value==='_semua'||String(a.created_at).slice(0,7)===$('dashPeriode').value)).length, rata=d.inv.length?Math.round(d.total/d.inv.length):0;
+  let perhatian=[]; if(d.st.Belum)perhatian.push(`${d.st.Belum} invoice belum berstatus lunas`); if(antar.length)perhatian.push(`${antar.length} anomali antar dapur`); if(pasar.length)perhatian.push(`${pasar.length} anomali terhadap pasar setempat`); if(duplikat.length)perhatian.push(`${duplikat.length} kelompok invoice berpotensi duplikat`); if(!perhatian.length)perhatian.push('Tidak ada peringatan utama pada periode ini');
+  return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kartu('Total Invoice',d.inv.length,'var(--navy)')}${kartu('Total Belanja',rupiah(d.total),'var(--navy)')}${kartu('Rata-rata / Invoice',rupiah(rata),'var(--navy)')}${kartu('Revisi Tercatat',revisi,'var(--navy)')}</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kartu('🟢 Lunas',rupiah(d.stNilai.Lunas),'#1a7f3c',d.st.Lunas+' invoice')}${kartu('🔴 Belum Lunas',rupiah((d.stNilai.Belum||0)+(d.stNilai.Sebagian||0)),'#c0392b',(d.st.Belum+d.st.Sebagian)+' invoice')}${kartu('Antar Dapur',antar.length,antar.length?'#c0392b':'#1a7f3c','selisih ≥20%')}${kartu('Pasar Setempat',pasar.length,pasar.length?'#c0392b':'#1a7f3c','selisih ≥20%')}</div><div class="panel" style="margin-bottom:12px"><h2>Ringkasan Otomatis</h2><div class="kontrol-note">${sel.atas?`Dapur dengan nilai belanja tertinggi adalah <b>${esc(sel.atas.nama)}</b> sebesar <b>${rupiah(sel.atas.total)}</b>, selisih <b>${rupiah(sel.gap)}</b> dari rata-rata dapur lain. `:''}${perhatian.map(x=>`<span style="display:block">• ${esc(x)}</span>`).join('')}</div></div>${htmlTabelDapur(d.dapurArr)}`;
 }
 function htmlTabelDapur(arr){ return `<div class="panel"><h2>Belanja per Dapur</h2><table class="kontrol-table"><tr><th>Dapur</th><th class="r">Invoice</th><th class="r">Total</th></tr>${arr.map(x=>`<tr><td>${esc(x.nama)}</td><td class="r">${x.jml}</td><td class="r">${rupiah(x.total)}</td></tr>`).join('')}</table></div>`; }
-function renderAnomaliKontrol(d){ const data=dataAnomali(d.inv), dup=kandidatDuplikat(d.inv); return `<div class="kontrol-note" style="margin-bottom:12px">Ditandai bila harga satuan berbeda minimal 25% dari median barang standar yang sama. Ini adalah daftar pemeriksaan, bukan keputusan otomatis.</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${kartu('Harga Perlu Ditinjau',data.length,data.length?'#c0392b':'#1a7f3c')}${kartu('Invoice Mirip Persis',dup.length,dup.length?'#b8860b':'#1a7f3c')}</div><div class="panel" style="margin-bottom:12px"><h2>Daftar Anomali</h2>${data.length?`<table class="kontrol-table"><tr><th>Barang</th><th>Dapur / Invoice</th><th class="r">Harga</th><th class="r">Acuan</th><th class="r">Selisih</th><th>Alasan</th></tr>${data.slice(0,150).map(x=>`<tr><td>${esc(x.nama)} · ${esc(x.unit)}</td><td>${esc(x.dapur)}<div class="kecil">${esc(x.no)}</div></td><td class="r">${rupiah(x.harga)}</td><td class="r">${rupiah(x.acuan)}</td><td class="r"><span class="badge-kontrol ${Math.abs(x.persen)>=50?'merah':'kuning'}">${x.persen>0?'+':''}${x.persen}%</span></td><td>${esc(x.alasan)}</td></tr>`).join('')}</table>`:'<div class="kosong">Tidak ada harga yang melewati ambang pemeriksaan.</div>'}</div><div class="panel"><h2>Kandidat Invoice Duplikat</h2>${dup.length?dup.map(g=>`<div class="item-riwayat"><div class="info"><b>${esc(g.map(x=>x.no).join(' · '))}</b><span>${esc(g[0].pelanggan)} · ${tglIndo(g[0].tanggal)} · ${rupiah(g[0].total)}</span></div></div>`).join(''):'<div class="kosong">Tidak ada invoice yang isinya sama persis.</div>'}</div>`; }
+function htmlTabelAnomali(data,jenis){
+  if(!data.length)return `<div class="kosong">Tidak ada anomali ${jenis==='antar_dapur'?'antar dapur':'terhadap pasar setempat'} pada periode ini.</div>`;
+  return `<table class="kontrol-table"><tr><th>Label</th><th>Barang</th><th>Dapur / Invoice</th><th class="r">Harga</th><th class="r">Acuan</th><th class="r">Selisih</th><th>Sumber pembanding</th></tr>${data.slice(0,150).map(x=>`<tr><td><span class="badge-kontrol ${jenis==='pasar_setempat'?'hijau':''}">${jenis==='antar_dapur'?'Antar Dapur':'Pasar Setempat'}</span></td><td>${esc(x.nama)} · ${esc(x.unit)}${x.namaAcuan?`<div class="kecil">Acuan: ${esc(x.namaAcuan)}</div>`:''}</td><td>${esc(x.dapur)}<div class="kecil">${esc(x.no)}</div></td><td class="r">${rupiah(x.harga)}</td><td class="r">${rupiah(x.acuan)}</td><td class="r"><span class="badge-kontrol ${Math.abs(x.persen)>=50?'merah':'kuning'}">${x.persen>0?'+':''}${x.persen}%</span></td><td>${esc(x.alasan)}${x.sumber?`<div class="kecil">${esc(x.sumber)}${x.tanggalAcuan?` · ${esc(tglIndo(x.tanggalAcuan))}`:''}</div>`:''}</td></tr>`).join('')}</table>`;
+}
+function renderAnomaliKontrol(d){
+  const data=dataAnomali(d.inv), antar=data.filter(x=>x.jenis==='antar_dapur'), pasar=data.filter(x=>x.jenis==='pasar_setempat'), dup=kandidatDuplikat(d.inv);
+  return `<div class="kontrol-note" style="margin-bottom:12px"><b>Antar Dapur</b> membandingkan median harga barang yang sama dengan median dapur lain. <b>Pasar Setempat</b> membandingkan harga invoice dengan harga resmi wilayah dapur pada tanggal terdekat sebelum invoice. Keduanya ditandai mulai selisih 20%.</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${kartu('Antar Dapur',antar.length,antar.length?'#c0392b':'#1a7f3c')}${kartu('Pasar Setempat',pasar.length,pasar.length?'#c0392b':'#1a7f3c')}${kartu('Invoice Mirip Persis',dup.length,dup.length?'#b8860b':'#1a7f3c')}</div><div class="panel" style="margin-bottom:12px"><h2>Anomali Antar Dapur</h2>${htmlTabelAnomali(antar,'antar_dapur')}</div><div class="panel" style="margin-bottom:12px"><h2>Anomali terhadap Pasar Setempat</h2>${hargaPasarMemuat&&!hargaPasar.length?'<div class="kosong">Sedang memuat harga pasar…</div>':htmlTabelAnomali(pasar,'pasar_setempat')}</div><div class="panel"><h2>Kandidat Invoice Duplikat</h2>${dup.length?dup.map(g=>`<div class="item-riwayat"><div class="info"><b>${esc(g.map(x=>x.no).join(' · '))}</b><span>${esc(g[0].pelanggan)} · ${tglIndo(g[0].tanggal)} · ${rupiah(g[0].total)}</span></div></div>`).join(''):'<div class="kosong">Tidak ada invoice yang isinya sama persis.</div>'}</div>`;
+}
 function renderStandarKontrol(d){ const data=dataStandar(d.inv); return `<div class="kontrol-note" style="margin-bottom:12px">Riwayat tidak diubah otomatis. Sistem menampilkan nama dan satuan standar saat mengetik, sementara jenis, merek, ukuran, frozen/fillet, dan kemasan tetap dipisahkan.</div><div class="panel"><h2>Usulan Standarisasi</h2>${data.length?`<table class="kontrol-table"><tr><th>Nama & satuan standar</th><th>Variasi ditemukan</th><th class="r">Pemakaian</th><th class="r">Nilai</th></tr>${data.slice(0,200).map(x=>`<tr><td><b>${esc(x.nama)}</b> · ${esc(x.unit)}</td><td>${x.varianArr.map(([v,n])=>`${esc(v)} <span class="badge-kontrol">${n}×</span>`).join('<br>')}</td><td class="r">${x.jumlah}</td><td class="r">${rupiah(x.nilai)}</td></tr>`).join('')}</table>`:'<div class="kosong">Semua penulisan pada periode ini sudah konsisten.</div>'}</div>`; }
 function renderSelisihKontrol(d){ const x=dataSelisih(d.inv); if(x.urut.length<2)return '<div class="kosong">Perlu minimal dua dapur untuk membandingkan.</div>'; const totalGap=x.gap||1; return `<div class="kontrol-note" style="margin-bottom:12px"><b>${esc(x.atas.nama)}</b> lebih tinggi ${rupiah(x.gap)} dari rata-rata dapur lain. Kontributor di bawah dihitung dari nilai barang (jumlah × harga), sehingga mencakup perbedaan volume dan harga.</div><div class="panel" style="margin-bottom:12px"><h2>Penyebab Utama per Kategori</h2><table class="kontrol-table"><tr><th>Kategori</th><th class="r">${esc(x.atas.nama)}</th><th class="r">Rata-rata lain</th><th class="r">Kontribusi selisih</th></tr>${x.drivers.map(y=>`<tr><td>${esc(y.nama)}</td><td class="r">${rupiah(y.atas)}</td><td class="r">${rupiah(y.lain)}</td><td class="r"><b>${rupiah(y.selisih)}</b> · ${Math.round(y.selisih/totalGap*100)}%</td></tr>`).join('')}</table></div><div class="panel"><h2>Barang Pendorong Selisih</h2><table class="kontrol-table"><tr><th>Barang</th><th class="r">${esc(x.atas.nama)}</th><th class="r">Rata-rata lain</th><th class="r">Selisih</th></tr>${x.items.map(y=>`<tr><td>${esc(y.nama)}</td><td class="r">${rupiah(y.atas)}</td><td class="r">${rupiah(y.lain)}</td><td class="r">${rupiah(y.selisih)}</td></tr>`).join('')}</table></div>`; }
 function renderAuditKontrol(){ const p=$('dashPeriode').value, data=aktivitasKontrol.filter(a=>a.action==='revised'&&(p==='_semua'||String(a.created_at).slice(0,7)===p)); return `<div class="kontrol-note" style="margin-bottom:12px">Revisi baru menyimpan siapa, kapan, serta nilai sebelum dan sesudah. Revisi lama tetap tercatat, tetapi mungkin belum memiliki rincian perubahan.</div>${data.length?data.map(htmlAktivitas).join(''):'<div class="kosong">Belum ada revisi pada periode ini.</div>'}`; }
