@@ -18,7 +18,7 @@ revoke all on private.staff_emails from public, anon, authenticated;
 
 insert into private.staff_emails (email) values
   ('ajeng@staff.invoice-koperasi.id'),
-  ('nurul@staff.invoice-koperasi.id'),
+  ('nana@staff.invoice-koperasi.id'),
   ('may@staff.invoice-koperasi.id'),
   ('laznas@staff.invoice-koperasi.id')
 on conflict (email) do nothing;
@@ -264,7 +264,7 @@ exception when duplicate_object then null; end $$;
 update private.staff_emails set role_name='admin'
   where email in ('ajeng@staff.invoice-koperasi.id','laznas@staff.invoice-koperasi.id');
 update private.staff_emails set role_name='staff'
-  where email in ('nurul@staff.invoice-koperasi.id','may@staff.invoice-koperasi.id');
+  where email in ('nana@staff.invoice-koperasi.id','may@staff.invoice-koperasi.id');
 
 create or replace function private.current_invoice_role()
 returns text language sql stable security definer set search_path=''
