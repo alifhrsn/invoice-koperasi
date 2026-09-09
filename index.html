@@ -1298,24 +1298,75 @@ async function siapkanPdfLibs(){
   _pdfLibs = { jsPDF: window.jspdf.jsPDF, html2canvas: window.html2canvas };
   return _pdfLibs;
 }
-// hasilkan Blob PDF dari lembar preview A4
+async function tungguAsetPdf(lembar){
+  if(document.fonts?.ready) await document.fonts.ready;
+  await Promise.all([...lembar.querySelectorAll('img')].map(async img=>{
+    if(img.complete && img.naturalWidth>0) return;
+    if(typeof img.decode==='function'){
+      try{ await img.decode(); return; }catch(e){}
+    }
+    await new Promise(resolve=>{
+      const selesai=()=>resolve();
+      img.addEventListener('load', selesai, {once:true});
+      img.addEventListener('error', selesai, {once:true});
+      setTimeout(selesai, 2500);
+    });
+  }));
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+}
+
+/*
+ * Render PDF dari salinan A4 berukuran tetap. Lembar asli memakai CSS zoom agar
+ * pratinjau muat di HP; html2canvas pada sebagian browser salah menghitung teks
+ * bila zoom tersebut ikut ditangkap.
+ */
+async function tangkapLembarPdf(html2canvas){
+  const sumber=$('lembarPdf');
+  const wadah=document.createElement('div');
+  const lembar=sumber.cloneNode(true);
+
+  wadah.setAttribute('aria-hidden','true');
+  Object.assign(wadah.style, {
+    position:'fixed', left:'-10000px', top:'0', width:'210mm',
+    background:'#fff', overflow:'visible', pointerEvents:'none', zIndex:'-2147483647'
+  });
+  lembar.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+  lembar.removeAttribute('id');
+  lembar.style.setProperty('--preview-scale','1');
+  lembar.style.setProperty('zoom','1','important');
+  Object.assign(lembar.style, {
+    display:'flex', width:'210mm', minHeight:'297mm', height:'auto',
+    maxWidth:'none', margin:'0', transform:'none', boxShadow:'none'
+  });
+  wadah.appendChild(lembar);
+  document.body.appendChild(wadah);
+
+  try{
+    await tungguAsetPdf(lembar);
+    const lebar=Math.ceil(lembar.scrollWidth);
+    const tinggi=Math.ceil(lembar.scrollHeight);
+    return await html2canvas(lembar, {
+      scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false,
+      scrollX:0, scrollY:0, width:lebar, height:tinggi,
+      windowWidth:Math.max(lebar, 794), windowHeight:Math.max(tinggi, 1123)
+    });
+  }finally{
+    wadah.remove();
+  }
+}
+
+// hasilkan Blob PDF dari lembar A4 tetap, terlepas dari ukuran layar perangkat
 async function buatPdfBlob(){
   const { jsPDF, html2canvas } = await siapkanPdfLibs();
   setMode('pdf');                     // pastikan mode A4 aktif
   aturUkuranHalaman('pdf');
-  const lembar = $('lembarPdf');
-  const minH = lembar.style.minHeight;
-  lembar.style.minHeight = 'auto';    // capture pas setinggi konten (buang ruang kosong A4)
-  await new Promise(r=>setTimeout(r,60));
-  const kanvas = await html2canvas(lembar, {scale:2, backgroundColor:'#ffffff', useCORS:true});
-  lembar.style.minHeight = minH;      // kembalikan tampilan preview
+  const kanvas = await tangkapLembarPdf(html2canvas);
   const wmm = 210, hmm = kanvas.height * wmm / kanvas.width;
   const img = kanvas.toDataURL('image/jpeg', 0.92);
   const pageH = 297;   // tinggi A4
   if(hmm <= pageH + 2){
-    // muat 1 halaman: buat halaman setinggi konten (hindari halaman kedua kosong)
-    const pdf = new jsPDF({unit:'mm', format:[wmm, Math.max(hmm, 60)], orientation:'portrait'});
-    pdf.addImage(img, 'JPEG', 0, 0, wmm, hmm);
+    const pdf = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
+    pdf.addImage(img, 'JPEG', 0, 0, wmm, pageH);
     return pdf.output('blob');
   }
   // konten lebih dari 1 halaman -> A4 multi-halaman
